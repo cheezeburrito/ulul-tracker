@@ -89,12 +89,12 @@ html, body {
 
 /* Page header */
 .page-header {
-  height: var(--header-height);
+  min-height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
   flex-shrink: 0;
   position: relative;
   z-index: 10;
@@ -124,7 +124,7 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(var(--tab-bar-height) + 20px);
+  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px));
 }
 
 .tab-page {
@@ -151,16 +151,15 @@ html, body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: var(--tab-bar-height);
   background: rgba(18, 18, 18, 0.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border-top: 0.5px solid var(--border-subtle);
   display: flex;
   justify-content: space-around;
-  align-items: flex-start;
+  align-items: center;
   padding-top: 8px;
-  padding-bottom: var(--safe-bottom);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
   z-index: 1000;
 }
 
@@ -192,6 +191,7 @@ html, body {
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+  overflow: visible;
 }
 
 /* ============================================================
@@ -517,7 +517,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 0 16px;
+  padding: 6px 0 12px;
   position: sticky;
   top: 0;
   background: var(--bg-primary);
@@ -1271,7 +1271,7 @@ textarea {
       <span>Today</span>
     </button>
     <button class="tab-bar-btn" data-tab="history">
-      <svg viewBox="0 0 24 24"><path d="M3 3v5h5"/><path d="M3 8a9 9 0 1 1 1.1 4.4"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M3 4.5v5h5"/><path d="M3 9.5a9 9 0 1 1 1.1 4.4"/><circle cx="13" cy="12" r="1"/></svg>
       <span>History</span>
     </button>
     <button class="tab-bar-btn" data-tab="workouts">
@@ -1607,8 +1607,9 @@ function closeConfirm() {
 }
 
 function doConfirm() {
+  const cb = confirmCallback;
   closeConfirm();
-  if (confirmCallback) confirmCallback();
+  if (cb) cb();
 }
 
 /* ============================================================
@@ -1821,8 +1822,7 @@ function renderActiveSession() {
   let html = `
     <div class="session-header">
       <div>
-        <div class="sh-title">${activeSession.workoutName}</div>
-        <div class="sh-subtitle">${activeSession.version.charAt(0).toUpperCase() + activeSession.version.slice(1)} &middot; ${formatTime(activeSession.startTime)}</div>
+        <div class="sh-subtitle">${activeSession.version.charAt(0).toUpperCase() + activeSession.version.slice(1)} &middot; Started ${formatTime(activeSession.startTime)}</div>
       </div>
       <div class="session-progress">
         <svg class="progress-ring" viewBox="0 0 32 32">
