@@ -1238,6 +1238,38 @@ textarea {
   gap: 8px;
   margin-bottom: 12px;
 }
+
+/* Workout select mode */
+.wli-check {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  color: transparent;
+  transition: all 0.2s;
+  margin-right: 10px;
+}
+
+.wli-check.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.wli-selected {
+  border-color: rgba(10, 132, 255, 0.4) !important;
+  background: var(--accent-dim) !important;
+}
+
+.workout-list-item {
+  display: flex;
+  align-items: center;
+}
 </style>
 </head>
 <body>
@@ -1321,6 +1353,8 @@ const NS = 'ulul_';
 const KEYS = {
   sessions: NS + 'sessions',
   customWorkouts: NS + 'custom_workouts',
+  editedDefaults: NS + 'edited_defaults',
+  deletedDefaults: NS + 'deleted_defaults',
   restDuration: NS + 'rest_duration',
   flags: NS + 'flags',
   lastWorkout: NS + 'last_workout',
@@ -1440,7 +1474,6 @@ const DEFAULT_WORKOUTS = [
   },
 ];
 
-/* Common exercises for swap feature */
 const COMMON_EXERCISES = [
   'Flat Bench Press','Incline Bench Press','Dumbbell Bench Press','Incline DB Press',
   'Hammer Strength Chest Press','Cable Fly Low to High','Pec Deck',
@@ -1467,15 +1500,16 @@ function loadJSON(key, fallback = null) {
   try { return JSON.parse(localStorage.getItem(key)) || fallback; }
   catch { return fallback; }
 }
-
-function saveJSON(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
-}
+function saveJSON(key, data) { localStorage.setItem(key, JSON.stringify(data)); }
 
 function getSessions() { return loadJSON(KEYS.sessions, []); }
 function saveSessions(s) { saveJSON(KEYS.sessions, s); }
 function getCustomWorkouts() { return loadJSON(KEYS.customWorkouts, []); }
 function saveCustomWorkouts(w) { saveJSON(KEYS.customWorkouts, w); }
+function getEditedDefaults() { return loadJSON(KEYS.editedDefaults, {}); }
+function saveEditedDefaults(e) { saveJSON(KEYS.editedDefaults, e); }
+function getDeletedDefaults() { return loadJSON(KEYS.deletedDefaults, []); }
+function saveDeletedDefaults(d) { saveJSON(KEYS.deletedDefaults, d); }
 function getFlags() { return loadJSON(KEYS.flags, {}); }
 function saveFlags(f) { saveJSON(KEYS.flags, f); }
 function getRestDuration() { return parseInt(localStorage.getItem(KEYS.restDuration)) || 90; }
@@ -1487,9 +1521,12 @@ function setLastWorkout(id) { localStorage.setItem(KEYS.lastWorkout, id); }
    STATE
    ============================================================ */
 let currentTab = 'today';
-let activeSession = null; // { workoutId, workoutName, version, exercises: [...], startTime }
+let activeSession = null;
 let restTimerInterval = null;
 let restTimerRemaining = 0;
+let sessionTimerInterval = null;
+let workoutSelectMode = false;
+let workoutSelected = new Set();
 
 /* ============================================================
    UTILITY
@@ -1520,16 +1557,29 @@ function formatTimer(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+function formatElapsed(startIso) {
+  const diff = Math.floor((Date.now() - new Date(startIso).getTime()) / 1000);
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  const s = diff % 60;
+  if (h > 0) return `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+  return `${m}:${s.toString().padStart(2,'0')}`;
+}
+
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2, 6);
 }
 
-/* Get all workouts (default + custom) */
+/* Get all workouts (defaults with edits applied + custom) */
 function getAllWorkouts() {
-  return [...DEFAULT_WORKOUTS, ...getCustomWorkouts()];
+  const edited = getEditedDefaults();
+  const deleted = getDeletedDefaults();
+  const defaults = DEFAULT_WORKOUTS
+    .filter(w => !deleted.includes(w.id))
+    .map(w => edited[w.id] ? { ...w, ...edited[w.id], id: w.id, isDefault: true } : w);
+  return [...defaults, ...getCustomWorkouts()];
 }
 
-/* Get the suggested next workout based on ULUL rotation */
 function getNextWorkout() {
   const lastId = getLastWorkout();
   const order = ['upper_a', 'lower_a', 'upper_b', 'lower_b'];
@@ -1539,7 +1589,6 @@ function getNextWorkout() {
   return order[(idx + 1) % order.length];
 }
 
-/* Get previous session data for an exercise name within a specific workout */
 function getPreviousExerciseData(exerciseName, workoutId) {
   const sessions = getSessions();
   for (let i = sessions.length - 1; i >= 0; i--) {
@@ -1556,7 +1605,7 @@ function getPreviousExerciseData(exerciseName, workoutId) {
    ============================================================ */
 function switchTab(tab) {
   if (activeSession && tab !== 'today') {
-    showConfirm('Leave Session?', 'You have an active session. Your progress will remain until you save or discard.', () => {
+    showConfirm('Leave Session?', 'Your progress will remain until you save or discard.', () => {
       doSwitchTab(tab);
     });
     return;
@@ -1575,10 +1624,9 @@ function doSwitchTab(tab) {
 
   if (tab === 'today') renderToday();
   if (tab === 'history') renderHistory();
-  if (tab === 'workouts') renderWorkouts();
+  if (tab === 'workouts') { workoutSelectMode = false; workoutSelected.clear(); renderWorkouts(); }
   if (tab === 'settings') renderSettings();
 
-  // Scroll to top
   $('#tabContent').scrollTop = 0;
 }
 
@@ -1632,11 +1680,11 @@ function startRestTimer() {
   updateRestTimerDisplay();
   $('#restTimerOverlay').classList.add('visible');
 
+  if (restTimerInterval) clearInterval(restTimerInterval);
   restTimerInterval = setInterval(() => {
     restTimerRemaining--;
     if (restTimerRemaining <= 0) {
       dismissRestTimer();
-      // Vibrate if available
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
       return;
     }
@@ -1680,7 +1728,6 @@ function renderToday() {
 
   let html = '';
 
-  // Next workout suggestion card
   if (nextW) {
     html += `
       <div class="next-workout-card">
@@ -1692,10 +1739,8 @@ function renderToday() {
     `;
   }
 
-  // Quick start grid
   html += '<div class="section-header">All Workouts</div>';
   html += '<div class="workout-select-grid">';
-
   allW.forEach(w => {
     html += `
       <button class="workout-select-btn" onclick="startWorkoutSelect('${w.id}')">
@@ -1704,10 +1749,8 @@ function renderToday() {
       </button>
     `;
   });
-
   html += '</div>';
 
-  // Last session info
   const sessions = getSessions();
   if (sessions.length > 0) {
     const last = sessions[sessions.length - 1];
@@ -1730,7 +1773,6 @@ function startWorkoutSelect(workoutId) {
   const w = allW.find(x => x.id === workoutId);
   if (!w) return;
 
-  // If workout only has one version (or no short/optimal distinction), skip selection
   if (!w.short && !w.optimal && w.exercises) {
     beginSession(workoutId, 'custom');
     return;
@@ -1761,7 +1803,7 @@ function startWorkoutSelect(workoutId) {
   `);
 }
 
-/* Begin a session */
+/* Begin a session (with auto-fill from last session) */
 function beginSession(workoutId, version) {
   const allW = getAllWorkouts();
   const w = allW.find(x => x.id === workoutId);
@@ -1784,6 +1826,7 @@ function beginSession(workoutId, version) {
     exercises: template.map(ex => {
       const flagKey = w.id + '::' + ex.name;
       const flag = flags[flagKey] || null;
+      const prev = getPreviousExerciseData(ex.name, w.id);
       return {
         id: generateId(),
         name: ex.name,
@@ -1794,7 +1837,7 @@ function beginSession(workoutId, version) {
         flagDown: false,
         prevFlag: flag,
         sets: Array.from({ length: ex.sets || 2 }, (_, i) => ({
-          weight: '',
+          weight: prev && prev.sets[i] ? prev.sets[i].weight : '',
           reps: '',
           rir: i === 0 ? 1 : 0,
           failure: i === 1,
@@ -1803,6 +1846,13 @@ function beginSession(workoutId, version) {
       };
     }),
   };
+
+  // Start session elapsed timer
+  if (sessionTimerInterval) clearInterval(sessionTimerInterval);
+  sessionTimerInterval = setInterval(() => {
+    const el = document.getElementById('sessionElapsed');
+    if (el && activeSession) el.textContent = formatElapsed(activeSession.startTime);
+  }, 1000);
 
   renderActiveSession();
 }
@@ -1822,7 +1872,7 @@ function renderActiveSession() {
   let html = `
     <div class="session-header">
       <div>
-        <div class="sh-subtitle">${activeSession.version.charAt(0).toUpperCase() + activeSession.version.slice(1)} &middot; Started ${formatTime(activeSession.startTime)}</div>
+        <div class="sh-subtitle">${activeSession.version.charAt(0).toUpperCase() + activeSession.version.slice(1)} &middot; <span id="sessionElapsed">${formatElapsed(activeSession.startTime)}</span></div>
       </div>
       <div class="session-progress">
         <svg class="progress-ring" viewBox="0 0 32 32">
@@ -1837,14 +1887,12 @@ function renderActiveSession() {
     </div>
   `;
 
-  // Exercise cards
   activeSession.exercises.forEach((ex, exIdx) => {
     const allDone = ex.sets.every(s => s.completed);
     const prev = getPreviousExerciseData(ex.name, activeSession.workoutId);
 
     html += `<div class="exercise-card ${allDone ? 'all-done' : ''}">`;
 
-    // Header
     html += `
       <div class="ex-header">
         <div class="ex-header-left">
@@ -1853,7 +1901,7 @@ function renderActiveSession() {
             ${ex.prevFlag === 'down' ? '<span class="flag-arrow flag-down">▼</span>' : ''}
             ${ex.name}
           </div>
-          <div class="ex-rep-range">${ex.targetSets} × ${ex.targetReps} &middot; 2 sets to failure</div>
+          <div class="ex-rep-range">${ex.targetSets} × ${ex.targetReps} · 2 sets to failure</div>
         </div>
         <div class="ex-header-actions">
           <div class="reorder-btns">
@@ -1865,39 +1913,30 @@ function renderActiveSession() {
       </div>
     `;
 
-    // Previous data
     if (prev) {
-      const prevSummary = prev.sets.map((s, i) => `${s.weight || '?'}×${s.reps || '?'}`).join(', ');
+      const prevSummary = prev.sets.map(s => `${s.weight || '?'}×${s.reps || '?'}`).join(', ');
       html += `<div class="ex-prev">Last: <span>${prevSummary}</span></div>`;
     }
 
-    // Set table header
     html += `
       <div class="set-table">
         <div class="set-row-header">
-          <div>Set</div>
-          <div>Weight</div>
-          <div>Reps</div>
-          <div>RIR</div>
-          <div style="text-align:center">F</div>
-          <div style="text-align:center">✓</div>
+          <div>Set</div><div>Weight</div><div>Reps</div><div>RIR</div>
+          <div style="text-align:center">F</div><div style="text-align:center">✓</div>
         </div>
     `;
 
-    // Set rows
     ex.sets.forEach((set, setIdx) => {
       const rirClass = `rir-${Math.min(set.rir, 4)}`;
       const rirLabel = set.rir >= 4 ? '4+' : set.rir.toString();
 
       html += `
-        <div class="set-row ${set.completed ? 'completed' : ''}" id="set-${exIdx}-${setIdx}">
+        <div class="set-row ${set.completed ? 'completed' : ''}">
           <div class="set-num">${setIdx + 1}</div>
           <input type="number" class="set-input" value="${set.weight}" placeholder="lbs"
-            onchange="updateSet(${exIdx},${setIdx},'weight',this.value)"
-            inputmode="decimal">
+            onchange="updateSet(${exIdx},${setIdx},'weight',this.value)" inputmode="decimal">
           <input type="number" class="set-input" value="${set.reps}" placeholder="${ex.targetReps}"
-            onchange="updateSet(${exIdx},${setIdx},'reps',this.value)"
-            inputmode="numeric">
+            onchange="updateSet(${exIdx},${setIdx},'reps',this.value)" inputmode="numeric">
           <button class="rir-btn ${rirClass}" onclick="cycleRIR(${exIdx},${setIdx})">${rirLabel}</button>
           <button class="fail-check ${set.failure ? 'checked' : ''}" onclick="toggleFailure(${exIdx},${setIdx})">${set.failure ? '✕' : ''}</button>
           <button class="done-check ${set.completed ? 'checked' : ''}" onclick="toggleComplete(${exIdx},${setIdx})">${set.completed ? '✓' : ''}</button>
@@ -1905,9 +1944,8 @@ function renderActiveSession() {
       `;
     });
 
-    html += '</div>'; // end set-table
+    html += '</div>';
 
-    // Footer actions
     html += `
       <div class="ex-footer">
         <button class="ex-footer-btn btn-add-set" onclick="addSet(${exIdx})">+ Set</button>
@@ -1922,10 +1960,9 @@ function renderActiveSession() {
       </div>
     `;
 
-    html += '</div>'; // end exercise-card
+    html += '</div>';
   });
 
-  // Session actions
   html += `
     <div style="padding:16px 0 32px;display:flex;gap:10px">
       <button class="btn btn-green btn-block" onclick="saveSession()" style="flex:2">Save Session</button>
@@ -1943,15 +1980,12 @@ function renderActiveSession() {
    ============================================================ */
 function updateSet(exIdx, setIdx, field, value) {
   if (!activeSession) return;
-  if (field === 'weight' || field === 'reps') {
-    activeSession.exercises[exIdx].sets[setIdx][field] = value;
-  }
+  activeSession.exercises[exIdx].sets[setIdx][field] = value;
 }
 
 function cycleRIR(exIdx, setIdx) {
   if (!activeSession) return;
-  const set = activeSession.exercises[exIdx].sets[setIdx];
-  set.rir = (set.rir + 1) % 5;
+  activeSession.exercises[exIdx].sets[setIdx].rir = (activeSession.exercises[exIdx].sets[setIdx].rir + 1) % 5;
   renderActiveSession();
 }
 
@@ -1967,45 +2001,33 @@ function toggleComplete(exIdx, setIdx) {
   if (!activeSession) return;
   const set = activeSession.exercises[exIdx].sets[setIdx];
   set.completed = !set.completed;
-  if (set.completed) {
-    startRestTimer();
-  }
+  if (set.completed) startRestTimer();
   renderActiveSession();
 }
 
 function addSet(exIdx) {
   if (!activeSession) return;
-  const ex = activeSession.exercises[exIdx];
-  ex.sets.push({ weight: '', reps: '', rir: 1, failure: false, completed: false });
+  activeSession.exercises[exIdx].sets.push({ weight: '', reps: '', rir: 1, failure: false, completed: false });
   renderActiveSession();
 }
 
 function removeSet(exIdx) {
   if (!activeSession) return;
   const ex = activeSession.exercises[exIdx];
-  if (ex.sets.length > 1) {
-    ex.sets.pop();
-    renderActiveSession();
-  }
+  if (ex.sets.length > 1) { ex.sets.pop(); renderActiveSession(); }
 }
 
 function toggleFlag(exIdx, dir) {
   if (!activeSession) return;
   const ex = activeSession.exercises[exIdx];
-  if (dir === 'up') {
-    ex.flagUp = !ex.flagUp;
-    if (ex.flagUp) ex.flagDown = false;
-  } else {
-    ex.flagDown = !ex.flagDown;
-    if (ex.flagDown) ex.flagUp = false;
-  }
+  if (dir === 'up') { ex.flagUp = !ex.flagUp; if (ex.flagUp) ex.flagDown = false; }
+  else { ex.flagDown = !ex.flagDown; if (ex.flagDown) ex.flagUp = false; }
   renderActiveSession();
 }
 
 function toggleNotes(exIdx) {
   if (!activeSession) return;
-  const ex = activeSession.exercises[exIdx];
-  ex.showNotes = !ex.showNotes;
+  activeSession.exercises[exIdx].showNotes = !activeSession.exercises[exIdx].showNotes;
   const area = document.getElementById('notes-area-' + exIdx);
   if (area) area.classList.toggle('visible');
 }
@@ -2024,7 +2046,7 @@ function moveExercise(exIdx, direction) {
   renderActiveSession();
 }
 
-/* Swap exercise modal */
+/* Swap exercise modal with search */
 function showSwapModal(exIdx) {
   let html = `<div class="modal-title">Swap Exercise</div>`;
   html += `<div style="margin-bottom:12px">
@@ -2033,12 +2055,25 @@ function showSwapModal(exIdx) {
   </div>`;
   html += '<div class="divider"></div>';
   html += '<div class="section-header">Common Exercises</div>';
-  html += '<div class="swap-list">';
+  html += `<input type="text" id="swapSearch" placeholder="Filter exercises..." style="font-size:14px;margin-bottom:8px" oninput="filterSwapList(${exIdx})">`;
+  html += `<div class="swap-list" id="swapListContainer">`;
   COMMON_EXERCISES.forEach(name => {
     html += `<div class="swap-item" onclick="swapExercise(${exIdx},'${name.replace(/'/g, "\\'")}')">${name}</div>`;
   });
   html += '</div>';
   openModal(html);
+}
+
+function filterSwapList(exIdx) {
+  const search = (document.getElementById('swapSearch')?.value || '').toLowerCase();
+  const container = document.getElementById('swapListContainer');
+  if (!container) return;
+  let html = '';
+  COMMON_EXERCISES.filter(n => n.toLowerCase().includes(search)).forEach(name => {
+    html += `<div class="swap-item" onclick="swapExercise(${exIdx},'${name.replace(/'/g, "\\'")}')">${name}</div>`;
+  });
+  if (!html) html = '<div style="padding:16px;color:var(--text-tertiary);text-align:center">No matches</div>';
+  container.innerHTML = html;
 }
 
 function swapExercise(exIdx, newName) {
@@ -2062,7 +2097,6 @@ function swapExerciseCustom(exIdx) {
 function saveSession() {
   if (!activeSession) return;
 
-  // Save progression flags
   const flags = getFlags();
   activeSession.exercises.forEach(ex => {
     const key = activeSession.workoutId + '::' + ex.name;
@@ -2072,7 +2106,6 @@ function saveSession() {
   });
   saveFlags(flags);
 
-  // Build session record
   const session = {
     id: generateId(),
     workoutId: activeSession.workoutId,
@@ -2086,11 +2119,8 @@ function saveSession() {
       flagUp: ex.flagUp,
       flagDown: ex.flagDown,
       sets: ex.sets.map(s => ({
-        weight: s.weight,
-        reps: s.reps,
-        rir: s.rir,
-        failure: s.failure,
-        completed: s.completed,
+        weight: s.weight, reps: s.reps, rir: s.rir,
+        failure: s.failure, completed: s.completed,
       })),
     })),
   };
@@ -2101,6 +2131,7 @@ function saveSession() {
   setLastWorkout(activeSession.workoutId);
 
   activeSession = null;
+  if (sessionTimerInterval) { clearInterval(sessionTimerInterval); sessionTimerInterval = null; }
   showToast('Session saved!');
   renderToday();
   $('#pageTitle').textContent = 'Today';
@@ -2110,6 +2141,7 @@ function saveSession() {
 function discardSession() {
   showConfirm('Discard Session?', 'All progress from this session will be lost.', () => {
     activeSession = null;
+    if (sessionTimerInterval) { clearInterval(sessionTimerInterval); sessionTimerInterval = null; }
     renderToday();
     $('#pageTitle').textContent = 'Today';
     $('#headerActions').innerHTML = '';
@@ -2145,7 +2177,6 @@ function filterHistory() {
   const filter = document.getElementById('histFilter')?.value || '';
 
   let filtered = [...sessions].reverse();
-
   if (filter) filtered = filtered.filter(s => s.workoutName === filter);
   if (search) filtered = filtered.filter(s => s.exercises.some(e => e.name.toLowerCase().includes(search)));
 
@@ -2205,56 +2236,145 @@ function deleteSession(id) {
 }
 
 /* ============================================================
-   WORKOUTS TAB
+   WORKOUTS TAB (with multi-select delete, editable defaults)
    ============================================================ */
 function renderWorkouts() {
   const container = $('#tab-workouts');
   const allW = getAllWorkouts();
-
-  let html = '<div class="section-header">Default Workouts</div>';
-
-  DEFAULT_WORKOUTS.forEach(w => {
-    html += `
-      <div class="workout-list-item" onclick="previewWorkout('${w.id}')">
-        <div class="wli-left">
-          <div class="wli-name">${w.name}</div>
-          <div class="wli-detail">${w.subtitle}</div>
-        </div>
-        <div class="wli-actions">
-          <button class="ex-icon-btn" onclick="event.stopPropagation();duplicateWorkout('${w.id}')" title="Duplicate">⧉</button>
-        </div>
-      </div>
-    `;
-  });
-
+  const defaults = allW.filter(w => w.isDefault);
   const customs = getCustomWorkouts();
-  if (customs.length > 0) {
-    html += '<div class="section-header">Custom Workouts</div>';
-    customs.forEach(w => {
-      const exCount = w.short ? w.short.length : (w.exercises ? w.exercises.length : 0);
+
+  if (workoutSelectMode) {
+    $('#headerActions').innerHTML = `
+      <button class="header-btn" style="color:var(--red)" onclick="deleteSelectedWorkouts()">Delete (${workoutSelected.size})</button>
+      <button class="header-btn" onclick="exitWorkoutSelectMode()">Done</button>
+    `;
+  } else {
+    $('#headerActions').innerHTML = (defaults.length + customs.length) > 0
+      ? `<button class="header-btn" onclick="enterWorkoutSelectMode()">Select</button>` : '';
+  }
+
+  let html = '';
+
+  if (defaults.length > 0) {
+    html += '<div class="section-header">Default Workouts</div>';
+    defaults.forEach(w => {
+      const isSel = workoutSelected.has(w.id);
       html += `
-        <div class="workout-list-item" onclick="previewWorkout('${w.id}')">
+        <div class="workout-list-item ${isSel ? 'wli-selected' : ''}" onclick="${workoutSelectMode ? `toggleWorkoutSelection('${w.id}')` : `previewWorkout('${w.id}')`}">
+          ${workoutSelectMode ? `<div class="wli-check ${isSel ? 'checked' : ''}"><span>${isSel ? '✓' : ''}</span></div>` : ''}
           <div class="wli-left">
             <div class="wli-name">${w.name}</div>
-            <div class="wli-detail">${exCount} exercises</div>
+            <div class="wli-detail">${w.subtitle || ''}</div>
           </div>
+          ${!workoutSelectMode ? `
           <div class="wli-actions">
-            <button class="ex-icon-btn" onclick="event.stopPropagation();editCustomWorkout('${w.id}')" title="Edit">✎</button>
+            <button class="ex-icon-btn" onclick="event.stopPropagation();editDefaultWorkout('${w.id}')" title="Edit">✎</button>
             <button class="ex-icon-btn" onclick="event.stopPropagation();duplicateWorkout('${w.id}')" title="Duplicate">⧉</button>
-            <button class="ex-icon-btn" onclick="event.stopPropagation();deleteCustomWorkout('${w.id}')" title="Delete" style="color:var(--red)">✕</button>
-          </div>
+            <button class="ex-icon-btn" onclick="event.stopPropagation();deleteDefaultWorkout('${w.id}')" title="Delete" style="color:var(--red)">✕</button>
+          </div>` : ''}
         </div>
       `;
     });
   }
 
-  html += `
-    <div style="padding:16px 0">
-      <button class="btn btn-primary btn-block" onclick="openWorkoutBuilder()">+ Create Custom Workout</button>
-    </div>
-  `;
+  if (customs.length > 0) {
+    html += '<div class="section-header">Custom Workouts</div>';
+    customs.forEach(w => {
+      const exCount = w.short ? w.short.length : (w.exercises ? w.exercises.length : 0);
+      const isSel = workoutSelected.has(w.id);
+      html += `
+        <div class="workout-list-item ${isSel ? 'wli-selected' : ''}" onclick="${workoutSelectMode ? `toggleWorkoutSelection('${w.id}')` : `previewWorkout('${w.id}')`}">
+          ${workoutSelectMode ? `<div class="wli-check ${isSel ? 'checked' : ''}"><span>${isSel ? '✓' : ''}</span></div>` : ''}
+          <div class="wli-left">
+            <div class="wli-name">${w.name}</div>
+            <div class="wli-detail">${exCount} exercises</div>
+          </div>
+          ${!workoutSelectMode ? `
+          <div class="wli-actions">
+            <button class="ex-icon-btn" onclick="event.stopPropagation();editCustomWorkout('${w.id}')" title="Edit">✎</button>
+            <button class="ex-icon-btn" onclick="event.stopPropagation();duplicateWorkout('${w.id}')" title="Duplicate">⧉</button>
+            <button class="ex-icon-btn" onclick="event.stopPropagation();deleteCustomWorkout('${w.id}')" title="Delete" style="color:var(--red)">✕</button>
+          </div>` : ''}
+        </div>
+      `;
+    });
+  }
+
+  if (defaults.length === 0 && customs.length === 0) {
+    html += `<div class="empty-state"><div class="empty-icon">🏋️</div><p>No workouts. Create one or restore defaults.</p></div>`;
+  }
+
+  const deletedDefaults = getDeletedDefaults();
+  if (deletedDefaults.length > 0) {
+    html += `<div style="padding:8px 0"><button class="btn btn-secondary btn-block btn-sm" onclick="restoreAllDefaults()">Restore Default Workouts</button></div>`;
+  }
+
+  html += `<div style="padding:8px 0 32px"><button class="btn btn-primary btn-block" onclick="openWorkoutBuilder()">+ Create Custom Workout</button></div>`;
 
   container.innerHTML = html;
+}
+
+function enterWorkoutSelectMode() { workoutSelectMode = true; workoutSelected.clear(); renderWorkouts(); }
+function exitWorkoutSelectMode() { workoutSelectMode = false; workoutSelected.clear(); renderWorkouts(); }
+
+function toggleWorkoutSelection(id) {
+  if (workoutSelected.has(id)) workoutSelected.delete(id); else workoutSelected.add(id);
+  renderWorkouts();
+}
+
+function deleteSelectedWorkouts() {
+  if (workoutSelected.size === 0) { showToast('Nothing selected'); return; }
+  const count = workoutSelected.size;
+  showConfirm(`Delete ${count} workout(s)?`, 'This cannot be undone for custom workouts. Defaults can be restored.', () => {
+    const deleted = getDeletedDefaults();
+    let customs = getCustomWorkouts();
+    workoutSelected.forEach(id => {
+      if (DEFAULT_WORKOUTS.find(w => w.id === id)) {
+        if (!deleted.includes(id)) deleted.push(id);
+      }
+      customs = customs.filter(w => w.id !== id);
+    });
+    saveDeletedDefaults(deleted);
+    saveCustomWorkouts(customs);
+    workoutSelectMode = false;
+    workoutSelected.clear();
+    renderWorkouts();
+    showToast(`${count} workout(s) deleted`);
+  }, 'Delete', true);
+}
+
+function editDefaultWorkout(id) {
+  const allW = getAllWorkouts();
+  const w = allW.find(x => x.id === id);
+  if (!w) return;
+  builderState = JSON.parse(JSON.stringify(w));
+  builderState._editing = true;
+  builderState._isDefault = true;
+  if (w.short && w.short.length > 0) builderState.hasVersions = true;
+  renderBuilder();
+}
+
+function deleteDefaultWorkout(id) {
+  showConfirm('Delete Default Workout?', 'You can restore it later from the Workouts tab.', () => {
+    const deleted = getDeletedDefaults();
+    if (!deleted.includes(id)) deleted.push(id);
+    saveDeletedDefaults(deleted);
+    const edited = getEditedDefaults();
+    delete edited[id];
+    saveEditedDefaults(edited);
+    renderWorkouts();
+    showToast('Workout deleted');
+  }, 'Delete', true);
+}
+
+function restoreAllDefaults() {
+  showConfirm('Restore Defaults?', 'Brings back all deleted defaults with original settings.', () => {
+    saveDeletedDefaults([]);
+    saveEditedDefaults({});
+    renderWorkouts();
+    showToast('Defaults restored');
+  });
 }
 
 /* Preview workout details */
@@ -2269,29 +2389,24 @@ function previewWorkout(id) {
   if (w.short) {
     html += '<div class="section-header">Short Version</div>';
     w.short.forEach(ex => {
-      html += `<div style="padding:6px 0;font-size:14px;color:var(--text-primary)">${ex.name} <span style="color:var(--text-secondary)">${ex.sets} × ${ex.reps}</span></div>`;
+      html += `<div style="padding:6px 0;font-size:14px">${ex.name} <span style="color:var(--text-secondary)">${ex.sets} × ${ex.reps}</span></div>`;
     });
   }
 
   if (w.optimal) {
     html += '<div class="section-header" style="margin-top:16px">Optimal Version</div>';
     w.optimal.forEach(ex => {
-      html += `<div style="padding:6px 0;font-size:14px;color:var(--text-primary)">${ex.name} <span style="color:var(--text-secondary)">${ex.sets} × ${ex.reps}</span></div>`;
+      html += `<div style="padding:6px 0;font-size:14px">${ex.name} <span style="color:var(--text-secondary)">${ex.sets} × ${ex.reps}</span></div>`;
     });
   }
 
   if (!w.short && !w.optimal && w.exercises) {
     w.exercises.forEach(ex => {
-      html += `<div style="padding:6px 0;font-size:14px;color:var(--text-primary)">${ex.name} <span style="color:var(--text-secondary)">${ex.sets} × ${ex.reps}</span></div>`;
+      html += `<div style="padding:6px 0;font-size:14px">${ex.name} <span style="color:var(--text-secondary)">${ex.sets} × ${ex.reps}</span></div>`;
     });
   }
 
-  html += `
-    <div style="margin-top:20px">
-      <button class="btn btn-primary btn-block" onclick="closeModal();startWorkoutSelect('${w.id}')">Start This Workout</button>
-    </div>
-  `;
-
+  html += `<div style="margin-top:20px"><button class="btn btn-primary btn-block" onclick="closeModal();startWorkoutSelect('${w.id}')">Start This Workout</button></div>`;
   openModal(html);
 }
 
@@ -2307,24 +2422,16 @@ function openWorkoutBuilder(editId = null) {
     if (!existing) return;
     builderState = JSON.parse(JSON.stringify(existing));
     builderState._editing = true;
+    builderState._isDefault = false;
   } else {
     builderState = {
       id: 'custom_' + generateId(),
-      name: '',
-      subtitle: '',
-      isDefault: false,
-      hasVersions: false,
-      short: [],
-      optimal: [],
+      name: '', subtitle: '', isDefault: false, hasVersions: false,
+      short: [], optimal: [],
       exercises: [{ name: '', sets: 2, reps: '8-12' }],
-      _editing: false,
+      _editing: false, _isDefault: false,
     };
-    // Detect if it has versions
-    if (builderState.short && builderState.short.length > 0) {
-      builderState.hasVersions = true;
-    }
   }
-
   renderBuilder();
 }
 
@@ -2345,7 +2452,6 @@ function renderBuilder() {
     </div>
   `;
 
-  // Version toggle
   html += `
     <div class="toggle-row" style="border-bottom:none;margin-bottom:12px">
       <span class="toggle-label">Short & Optimal versions</span>
@@ -2354,11 +2460,9 @@ function renderBuilder() {
   `;
 
   if (isVersioned) {
-    // Two sections
     html += `<div class="section-header">Short Version Exercises</div>`;
     html += renderBuilderExercises(bs.short || [], 'short');
     html += `<button class="btn btn-secondary btn-sm" onclick="addBuilderExercise('short')" style="margin-bottom:16px">+ Add Exercise</button>`;
-
     html += `<div class="section-header">Optimal Version Exercises</div>`;
     html += renderBuilderExercises(bs.optimal || [], 'optimal');
     html += `<button class="btn btn-secondary btn-sm" onclick="addBuilderExercise('optimal')" style="margin-bottom:16px">+ Add Exercise</button>`;
@@ -2374,7 +2478,6 @@ function renderBuilder() {
       <button class="btn btn-primary btn-block" onclick="saveBuilder()">Save</button>
     </div>
   `;
-
   openModal(html);
 }
 
@@ -2409,15 +2512,11 @@ function renderBuilderExercises(exercises, key) {
 function toggleBuilderVersions() {
   builderState.hasVersions = !builderState.hasVersions;
   if (builderState.hasVersions) {
-    // Move exercises to short if switching on
-    if (!builderState.short || builderState.short.length === 0) {
+    if (!builderState.short || builderState.short.length === 0)
       builderState.short = builderState.exercises ? [...builderState.exercises] : [{ name: '', sets: 2, reps: '8-12' }];
-    }
-    if (!builderState.optimal || builderState.optimal.length === 0) {
+    if (!builderState.optimal || builderState.optimal.length === 0)
       builderState.optimal = builderState.exercises ? [...builderState.exercises] : [{ name: '', sets: 2, reps: '8-12' }];
-    }
   } else {
-    // Merge to exercises
     builderState.exercises = builderState.short && builderState.short.length > 0 ? [...builderState.short] : [{ name: '', sets: 2, reps: '8-12' }];
   }
   renderBuilder();
@@ -2429,22 +2528,12 @@ function addBuilderExercise(key) {
   renderBuilder();
 }
 
-function removeBuilderExercise(key, idx) {
-  builderState[key].splice(idx, 1);
-  renderBuilder();
-}
-
-function updateBuilderExercise(key, idx, field, value) {
-  builderState[key][idx][field] = value;
-}
+function removeBuilderExercise(key, idx) { builderState[key].splice(idx, 1); renderBuilder(); }
+function updateBuilderExercise(key, idx, field, value) { builderState[key][idx][field] = value; }
 
 function saveBuilder() {
-  if (!builderState.name.trim()) {
-    showToast('Please enter a workout name');
-    return;
-  }
+  if (!builderState.name.trim()) { showToast('Please enter a workout name'); return; }
 
-  const customs = getCustomWorkouts();
   const workout = {
     id: builderState.id,
     name: builderState.name.trim(),
@@ -2459,23 +2548,25 @@ function saveBuilder() {
     workout.exercises = (builderState.exercises || []).filter(e => e.name.trim());
   }
 
-  const existingIdx = customs.findIndex(w => w.id === workout.id);
-  if (existingIdx >= 0) {
-    customs[existingIdx] = workout;
+  if (builderState._isDefault) {
+    const edited = getEditedDefaults();
+    edited[workout.id] = { name: workout.name, subtitle: workout.subtitle, short: workout.short, optimal: workout.optimal, exercises: workout.exercises };
+    saveEditedDefaults(edited);
   } else {
-    customs.push(workout);
+    const customs = getCustomWorkouts();
+    const existingIdx = customs.findIndex(w => w.id === workout.id);
+    if (existingIdx >= 0) customs[existingIdx] = workout;
+    else customs.push(workout);
+    saveCustomWorkouts(customs);
   }
 
-  saveCustomWorkouts(customs);
   closeModal();
   renderWorkouts();
   showToast(builderState._editing ? 'Workout updated' : 'Workout created');
   builderState = null;
 }
 
-function editCustomWorkout(id) {
-  openWorkoutBuilder(id);
-}
+function editCustomWorkout(id) { openWorkoutBuilder(id); }
 
 function deleteCustomWorkout(id) {
   showConfirm('Delete Workout?', 'This custom workout will be permanently removed.', () => {
@@ -2491,12 +2582,10 @@ function duplicateWorkout(id) {
   const allW = getAllWorkouts();
   const original = allW.find(w => w.id === id);
   if (!original) return;
-
   const copy = JSON.parse(JSON.stringify(original));
   copy.id = 'custom_' + generateId();
   copy.name = copy.name + ' (Copy)';
   copy.isDefault = false;
-
   const customs = getCustomWorkouts();
   customs.push(copy);
   saveCustomWorkouts(customs);
@@ -2541,7 +2630,7 @@ function renderSettings() {
     <div class="settings-group">
       <div class="settings-row" style="cursor:default">
         <span class="sr-label">ULUL Tracker</span>
-        <span class="sr-value">v1.0</span>
+        <span class="sr-value">v1.1</span>
       </div>
       <div class="settings-row" style="cursor:default">
         <span class="sr-label">Protocol</span>
@@ -2596,13 +2685,14 @@ function exportData() {
   const data = {
     sessions: getSessions(),
     customWorkouts: getCustomWorkouts(),
+    editedDefaults: getEditedDefaults(),
+    deletedDefaults: getDeletedDefaults(),
     flags: getFlags(),
     restDuration: getRestDuration(),
     lastWorkout: getLastWorkout(),
     exportDate: new Date().toISOString(),
-    version: '1.0',
+    version: '1.1',
   };
-
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2616,24 +2706,22 @@ function exportData() {
 function importData(event) {
   const file = event.target.files[0];
   if (!file) return;
-
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
-
       showConfirm('Import Data?', 'This will replace all current data with the imported backup.', () => {
         if (data.sessions) saveSessions(data.sessions);
         if (data.customWorkouts) saveCustomWorkouts(data.customWorkouts);
+        if (data.editedDefaults) saveEditedDefaults(data.editedDefaults);
+        if (data.deletedDefaults) saveDeletedDefaults(data.deletedDefaults);
         if (data.flags) saveFlags(data.flags);
         if (data.restDuration) setRestDuration(data.restDuration);
         if (data.lastWorkout) setLastWorkout(data.lastWorkout);
         showToast('Data imported successfully');
         renderSettings();
       });
-    } catch {
-      showToast('Invalid file format');
-    }
+    } catch { showToast('Invalid file format'); }
   };
   reader.readAsText(file);
   event.target.value = '';
@@ -2660,16 +2748,11 @@ function clearAllData() {
     display: 'standalone',
     background_color: '#000000',
     theme_color: '#000000',
-    icons: [
-      {
-        src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMDAwIi8+PHRleHQgeD0iOTAiIHk9IjEwNSIgZm9udC1mYW1pbHk9Ii1hcHBsZS1zeXN0ZW0sIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDgiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlVMVUw8L3RleHQ+PC9zdmc+',
-        sizes: '180x180',
-        type: 'image/svg+xml',
-        purpose: 'any',
-      },
-    ],
+    icons: [{
+      src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMDAwIi8+PHRleHQgeD0iOTAiIHk9IjEwNSIgZm9udC1mYW1pbHk9Ii1hcHBsZS1zeXN0ZW0sIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDgiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlVMVUw8L3RleHQ+PC9zdmc+',
+      sizes: '180x180', type: 'image/svg+xml', purpose: 'any',
+    }],
   };
-
   const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('link');
@@ -2685,42 +2768,27 @@ function clearAllData() {
   if ('serviceWorker' in navigator) {
     const swCode = `
       const CACHE_NAME = 'ulul-tracker-v1';
-      
-      self.addEventListener('install', event => {
-        self.skipWaiting();
-      });
-      
-      self.addEventListener('activate', event => {
-        event.waitUntil(clients.claim());
-      });
-      
+      self.addEventListener('install', event => { self.skipWaiting(); });
+      self.addEventListener('activate', event => { event.waitUntil(clients.claim()); });
       self.addEventListener('fetch', event => {
         event.respondWith(
           caches.match(event.request).then(response => {
             return response || fetch(event.request).then(fetchResponse => {
-              // Cache successful GET requests
               if (event.request.method === 'GET' && fetchResponse.status === 200) {
                 const responseClone = fetchResponse.clone();
-                caches.open(CACHE_NAME).then(cache => {
-                  cache.put(event.request, responseClone);
-                });
+                caches.open(CACHE_NAME).then(cache => { cache.put(event.request, responseClone); });
               }
               return fetchResponse;
             }).catch(() => {
-              // Offline fallback
-              return new Response('<h1>Offline</h1><p>ULUL Tracker is offline and not cached yet. Please connect to load the app first.</p>', {
-                headers: { 'Content-Type': 'text/html' }
-              });
+              return new Response('<h1>Offline</h1><p>ULUL Tracker is offline.</p>', { headers: { 'Content-Type': 'text/html' } });
             });
           })
         );
       });
     `;
-
     const blob = new Blob([swCode], { type: 'application/javascript' });
     const swUrl = URL.createObjectURL(blob);
-
-    navigator.serviceWorker.register(swUrl).then(reg => {
+    navigator.serviceWorker.register(swUrl).then(() => {
       console.log('ULUL Tracker SW registered');
     }).catch(err => {
       console.log('SW registration failed (expected if running from file://)', err);
