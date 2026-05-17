@@ -10,6 +10,9 @@
 <meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMDAwIi8+PHRleHQgeD0iOTAiIHk9IjEwNSIgZm9udC1mYW1pbHk9Ii1hcHBsZS1zeXN0ZW0sIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDgiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlVMVUw8L3RleHQ+PC9zdmc+">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -477,7 +480,7 @@ function applyOled(){if(getOledMode())document.body.classList.add('oled');else d
 function persistSession(){
   if(activeSession){saveJSON(KEYS.activeSession,activeSession);}
   else{localStorage.removeItem(KEYS.activeSession);}
-  autoSync();
+  fbAutoSync();
 }
 function restoreSession(){
   var saved=loadJSON(KEYS.activeSession,null);
@@ -493,17 +496,28 @@ function getWorkoutOrder(){return loadJSON(KEYS.workoutOrder,[]);}
 function saveWorkoutOrder(o){saveJSON(KEYS.workoutOrder,o);}
 
 /* ============================================================
-   CLOUD SYNC: passphrase-based backup via jsonblob.com
+   FIREBASE: Google Sign-In + Realtime Database sync
    ============================================================ */
-var syncBlobId=localStorage.getItem(NS+'sync_blob_id')||null;
-var syncPassphrase=localStorage.getItem(NS+'sync_passphrase')||null;
-var syncLastPush=localStorage.getItem(NS+'sync_last_push')||null;
+var fbApp=firebase.initializeApp({
+  apiKey:"AIzaSyB0uWTveY5EK6WfC4Ui3u7Fvkdl0AZibNg",
+  authDomain:"ulul-fbaa2.firebaseapp.com",
+  databaseURL:"https://ulul-fbaa2-default-rtdb.firebaseio.com",
+  projectId:"ulul-fbaa2",
+  storageBucket:"ulul-fbaa2.firebasestorage.app",
+  messagingSenderId:"275274462257",
+  appId:"1:275274462257:web:9e546d37877493523b1110"
+});
+var fbAuth=firebase.auth();
+var fbDb=firebase.database();
+var fbUser=null;
+var _fbSyncTimer=null;
 
-function getAllData(){
-  return{sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),activeSession:loadJSON(KEYS.activeSession,null),syncDate:new Date().toISOString(),version:'1.4'};
+function getAllDataForSync(){
+  return{sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),activeSession:loadJSON(KEYS.activeSession,null),syncDate:new Date().toISOString(),version:'1.5'};
 }
 
 function restoreAllData(data){
+  if(!data)return;
   if(data.sessions)saveSessions(data.sessions);
   if(data.customWorkouts)saveCustomWorkouts(data.customWorkouts);
   if(data.flags)saveFlags(data.flags);
@@ -516,83 +530,64 @@ function restoreAllData(data){
   if(data.activeSession)saveJSON(KEYS.activeSession,data.activeSession);
 }
 
-async function hashPassphrase(p){
-  var enc=new TextEncoder().encode(p);
-  var hash=await crypto.subtle.digest('SHA-256',enc);
-  return Array.from(new Uint8Array(hash)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+function fbPush(){
+  if(!fbUser)return Promise.resolve(false);
+  return fbDb.ref('users/'+fbUser.uid).set(getAllDataForSync()).then(function(){return true;}).catch(function(){return false;});
 }
 
-async function cloudPush(){
-  if(!syncBlobId||!syncPassphrase)return false;
-  try{
-    var payload={passHash:await hashPassphrase(syncPassphrase),data:getAllData()};
-    var r=await fetch('https://jsonblob.com/api/jsonBlob/'+syncBlobId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(r.ok){syncLastPush=new Date().toISOString();localStorage.setItem(NS+'sync_last_push',syncLastPush);return true;}
-    return false;
-  }catch(e){return false;}
+function fbPull(){
+  if(!fbUser)return Promise.resolve(null);
+  return fbDb.ref('users/'+fbUser.uid).once('value').then(function(snap){return snap.val();}).catch(function(){return null;});
 }
 
-async function cloudPull(){
-  if(!syncBlobId||!syncPassphrase)return null;
-  try{
-    var r=await fetch('https://jsonblob.com/api/jsonBlob/'+syncBlobId);
-    if(!r.ok)return null;
-    var blob=await r.json();
-    var myHash=await hashPassphrase(syncPassphrase);
-    if(blob.passHash!==myHash){showToast('Wrong passphrase');return null;}
-    return blob.data;
-  }catch(e){return null;}
+function fbAutoSync(){
+  if(!fbUser)return;
+  clearTimeout(_fbSyncTimer);
+  _fbSyncTimer=setTimeout(function(){fbPush();},3000);
 }
 
-async function cloudSignup(passphrase){
-  try{
-    var payload={passHash:await hashPassphrase(passphrase),data:getAllData()};
-    var r=await fetch('https://jsonblob.com/api/jsonBlob',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    if(r.ok){
-      var loc=r.headers.get('Location')||r.headers.get('location');
-      var id=loc?loc.split('/').pop():null;
-      if(!id){var d=await r.json();id=r.url.split('/').pop();}
-      if(id){
-        syncBlobId=id;syncPassphrase=passphrase;
-        localStorage.setItem(NS+'sync_blob_id',id);
-        localStorage.setItem(NS+'sync_passphrase',passphrase);
-        syncLastPush=new Date().toISOString();
-        localStorage.setItem(NS+'sync_last_push',syncLastPush);
-        return true;
-      }
+function fbSignIn(){
+  var provider=new firebase.auth.GoogleAuthProvider();
+  return fbAuth.signInWithPopup(provider).catch(function(err){
+    // Fallback for Safari PWA where popup may fail
+    if(err.code==='auth/popup-blocked'||err.code==='auth/popup-closed-by-user'||err.code==='auth/cancelled-popup-request'){
+      return fbAuth.signInWithRedirect(provider);
     }
-    return false;
-  }catch(e){return false;}
+    showToast('Sign in failed: '+err.message);
+    throw err;
+  });
 }
 
-async function cloudLogin(blobId,passphrase){
-  syncBlobId=blobId;syncPassphrase=passphrase;
-  var data=await cloudPull();
-  if(data){
-    localStorage.setItem(NS+'sync_blob_id',blobId);
-    localStorage.setItem(NS+'sync_passphrase',passphrase);
-    restoreAllData(data);
-    var restored=restoreSession();
-    return true;
+function fbSignOut(){
+  return fbAuth.signOut();
+}
+
+// Listen for auth state changes
+fbAuth.onAuthStateChanged(function(user){
+  fbUser=user;
+  // If we're on settings tab, re-render to show login state
+  if(currentTab==='settings')renderSettings();
+  // On login, pull cloud data if local is empty
+  if(user){
+    var localSessions=getSessions();
+    if(localSessions.length===0){
+      fbPull().then(function(data){
+        if(data&&data.sessions&&data.sessions.length>0){
+          restoreAllData(data);restoreSession();
+          showToast('Data restored from cloud');
+          if(currentTab==='today')renderToday();
+          if(currentTab==='settings')renderSettings();
+        }
+      });
+    } else {
+      // Local has data, push to cloud
+      fbPush();
+    }
   }
-  syncBlobId=null;syncPassphrase=null;
-  return false;
-}
+});
 
-function cloudLogout(){
-  syncBlobId=null;syncPassphrase=null;syncLastPush=null;
-  localStorage.removeItem(NS+'sync_blob_id');
-  localStorage.removeItem(NS+'sync_passphrase');
-  localStorage.removeItem(NS+'sync_last_push');
-}
-
-/* Auto-push after changes, debounced to avoid hammering */
-var _syncTimer=null;
-function autoSync(){
-  if(!syncBlobId||!syncPassphrase)return;
-  clearTimeout(_syncTimer);
-  _syncTimer=setTimeout(function(){cloudPush();},5000);
-}
+// Also check redirect result for Safari
+fbAuth.getRedirectResult().catch(function(){});
 
 
 /* STATE */
@@ -963,7 +958,7 @@ function saveSession(){
     exercises:activeSession.exercises.map(function(ex){return{name:ex.name,notes:ex.notes||'',flagUp:ex.flagUp,flagDown:ex.flagDown,sets:ex.sets.map(function(s){return{weight:s.weight,reps:s.reps,rir:s.rir,failure:s.failure,completed:s.completed};})};})};
   var sessions=getSessions();sessions.push(session);saveSessions(sessions);setLastWorkout(activeSession.workoutId);
   activeSession=null;clearPersistedSession();if(navigator.vibrate)navigator.vibrate([50,30,50]);showToast('Session saved!');
-  if(syncBlobId&&syncPassphrase)cloudPush();
+  fbPush();
   renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';
   // Auto-export reminder
   setTimeout(function(){
@@ -1164,78 +1159,39 @@ function renderSettings(){
   var container=$('#tab-settings');var rd=getRestDuration();
   var hasModified=getDeletedDefaults().length>0||Object.keys(getEditedDefaults()).length>0;
   var oled=getOledMode();
-  var loggedIn=!!syncBlobId;
   var html='';
 
-  // Cloud Sync section
-  html+='<div class="section-header">Cloud Sync</div>';
-  if(loggedIn){
-    html+='<div class="sync-status"><div class="sync-dot online"></div><div class="sync-info"><div class="sync-info-label">Synced</div><div class="sync-info-sub">'+(syncLastPush?'Last backup: '+formatDate(syncLastPush)+' '+formatTime(syncLastPush):'Not yet synced')+'</div></div></div>';
-    html+='<div class="settings-group"><div class="settings-row" onclick="doCloudPush()"><span class="sr-label">Sync Now</span><span class="sr-value">↑ Push</span></div><div class="settings-row" onclick="doCloudPull()"><span class="sr-label">Restore from Cloud</span><span class="sr-value">↓ Pull</span></div><div class="settings-row" onclick="showSyncId()"><span class="sr-label">My Sync ID</span><span class="sr-value">Copy ›</span></div><div class="settings-row" onclick="doCloudLogout()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Log Out</span><span class="sr-value" style="color:var(--red)">›</span></div></div>';
+  // Account / Sync
+  html+='<div class="section-header">Account</div>';
+  if(fbUser){
+    var name=fbUser.displayName||fbUser.email||'Signed In';
+    var photo=fbUser.photoURL;
+    html+='<div class="sync-status"><div style="width:32px;height:32px;border-radius:50%;overflow:hidden;flex-shrink:0">'+(photo?'<img src="'+photo+'" width="32" height="32" style="border-radius:50%">':'<div style="width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:14px">'+name.charAt(0).toUpperCase()+'</div>')+'</div><div class="sync-info"><div class="sync-info-label">'+name+'</div><div class="sync-info-sub">Synced to Firebase</div></div></div>';
+    html+='<div class="settings-group"><div class="settings-row" onclick="doFbPush()"><span class="sr-label">Sync Now</span><span class="sr-value">↑</span></div><div class="settings-row" onclick="doFbPull()"><span class="sr-label">Restore from Cloud</span><span class="sr-value">↓</span></div><div class="settings-row" onclick="doFbSignOut()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Sign Out</span><span class="sr-value" style="color:var(--red)">›</span></div></div>';
   }else{
-    html+='<div class="sync-login"><div class="sync-login-title">Back Up to Cloud</div><div class="sync-login-sub">Create a passphrase to sync your data across devices. If Safari clears your cache, just log back in to restore everything.</div><div class="sync-form"><input type="text" id="syncPass" placeholder="Choose a passphrase" autocomplete="off"><button class="btn btn-primary btn-block" onclick="doCloudSignup()">Create Backup</button></div><div style="margin-top:16px;padding-top:16px;border-top:0.5px solid var(--border-subtle)"><div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;font-weight:500">Already have a backup?</div><div class="sync-form"><input type="text" id="syncLoginId" placeholder="Sync ID"><input type="text" id="syncLoginPass" placeholder="Passphrase" autocomplete="off"><button class="btn btn-secondary btn-block" onclick="doCloudLogin()">Restore Backup</button></div></div></div>';
+    html+='<div class="sync-login"><div class="sync-login-title">Sign In to Sync</div><div class="sync-login-sub">Sign in with Google to back up your data to the cloud. If Safari clears your cache, just sign in again to restore everything.</div><button class="btn btn-primary btn-block" onclick="doFbSignIn()" style="gap:8px"><svg width="18" height="18" viewBox="0 0 48 48" style="flex-shrink:0"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>Sign in with Google</button></div>';
   }
 
   html+='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div></div>';
   html+='<div class="section-header">Appearance</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">OLED Black Mode</span><button class="toggle-switch '+(oled?'on':'')+'" onclick="setOledMode(!getOledMode());renderSettings()"></button></div></div>';
   html+='<div class="section-header">Data</div><div class="settings-group"><div class="settings-row" onclick="exportData()"><span class="sr-label">Export All Data</span><span class="sr-value">JSON ›</span></div><div class="settings-row" onclick="document.getElementById(\'importInput\').click()"><span class="sr-label">Import Data</span><span class="sr-value">JSON ›</span></div>'+(hasModified?'<div class="settings-row" onclick="resetDefaults()"><span class="sr-label">Reset Default Workouts</span><span class="sr-value">›</span></div>':'')+'<div class="settings-row" onclick="clearAllData()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Clear All Data</span><span class="sr-value" style="color:var(--red)">›</span></div></div><input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">';
-  html+='<div class="section-header">About</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">ULUL Tracker</span><span class="sr-value">v1.4</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Protocol</span><span class="sr-value">2 sets to failure</span></div></div>';
-  html+='<div style="text-align:center;padding:24px;color:var(--text-tertiary);font-size:12px">All data stored locally + cloud when synced.</div>';
+  html+='<div class="section-header">About</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">ULUL Tracker</span><span class="sr-value">v1.5</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Protocol</span><span class="sr-value">2 sets to failure</span></div></div>';
+  html+='<div style="text-align:center;padding:24px;color:var(--text-tertiary);font-size:12px">'+(fbUser?'Data synced to Google Firebase.':'Data stored locally on this device.')+'</div>';
   container.innerHTML=html;
 }
 
-/* CLOUD SYNC UI HANDLERS */
-async function doCloudSignup(){
-  var pass=document.getElementById('syncPass');if(!pass)return;
-  var p=pass.value.trim();
-  if(p.length<4){showToast('Passphrase must be at least 4 characters');return;}
-  showToast('Creating backup...');
-  var ok=await cloudSignup(p);
-  if(ok){showToast('Backup created!');renderSettings();}
-  else{showToast('Failed to create backup');}
-}
-async function doCloudLogin(){
-  var idEl=document.getElementById('syncLoginId');var passEl=document.getElementById('syncLoginPass');
-  if(!idEl||!passEl)return;
-  var id=idEl.value.trim();var p=passEl.value.trim();
-  if(!id||!p){showToast('Enter both Sync ID and passphrase');return;}
-  showToast('Restoring...');
-  var ok=await cloudLogin(id,p);
-  if(ok){showToast('Data restored!');renderSettings();}
-  else{showToast('Wrong ID or passphrase');}
-}
-async function doCloudPush(){
-  showToast('Syncing...');
-  var ok=await cloudPush();
-  showToast(ok?'Synced!':'Sync failed');
-  if(ok)renderSettings();
-}
-async function doCloudPull(){
-  showConfirm('Restore from Cloud?','This will replace all local data with your cloud backup.',async function(){
-    showToast('Restoring...');
-    var data=await cloudPull();
-    if(data){restoreAllData(data);restoreSession();showToast('Restored!');renderSettings();}
-    else{showToast('Restore failed');}
-  });
-}
-function showSyncId(){
-  openModal('<div class="modal-title">Your Sync ID</div><p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:16px">Use this ID + your passphrase to restore on any device.</p><div style="background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:14px;text-align:center;font-size:15px;font-weight:600;font-family:monospace;word-break:break-all;margin-bottom:16px" id="syncIdDisplay">'+syncBlobId+'</div><button class="btn btn-primary btn-block" onclick="copySyncId()">Copy Sync ID</button>');
-}
-function copySyncId(){
-  if(syncBlobId){navigator.clipboard.writeText(syncBlobId).then(function(){showToast('Copied!');}).catch(function(){showToast('Copy failed, select manually');});}
-}
-function doCloudLogout(){
-  showConfirm('Log Out?','Your cloud backup will remain. You can restore it anytime with your Sync ID and passphrase.',function(){
-    cloudLogout();renderSettings();showToast('Logged out');
-  });
-}
+/* FIREBASE UI HANDLERS */
+function doFbSignIn(){fbSignIn().then(function(){showToast('Signed in!');}).catch(function(){});}
+function doFbSignOut(){showConfirm('Sign Out?','Your cloud data stays safe. Sign back in anytime to restore.',function(){fbSignOut().then(function(){showToast('Signed out');renderSettings();});});}
+async function doFbPush(){showToast('Syncing...');var ok=await fbPush();showToast(ok?'Synced to cloud!':'Sync failed');}
+function doFbPull(){showConfirm('Restore from Cloud?','This will replace all local data with your cloud backup.',function(){fbPull().then(function(data){if(data){restoreAllData(data);restoreSession();showToast('Restored!');switchTab('today');}else{showToast('No cloud data found');}});});}
 function resetDefaults(){showConfirm('Reset Default Workouts?','This restores all 4 defaults to their original state and resets workout order.',function(){saveDeletedDefaults([]);saveEditedDefaults({});saveWorkoutOrder([]);renderSettings();showToast('Defaults restored');});}
 function openRestTimerSetting(){var c=getRestDuration();openModal('<div class="modal-title">Rest Timer</div><p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:20px">Default rest duration between sets</p><div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px"><button class="btn btn-secondary" onclick="adjustRestSetting(-15)">-15s</button><div style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;width:80px;text-align:center" id="restSettingDisplay">'+c+'s</div><button class="btn btn-secondary" onclick="adjustRestSetting(15)">+15s</button></div><input type="range" id="restSettingSlider" min="30" max="300" step="15" value="'+c+'" oninput="updateRestSettingFromSlider(this.value)" style="width:100%;margin-bottom:20px;accent-color:var(--accent)"><button class="btn btn-primary btn-block" onclick="saveRestSetting()">Save</button>');}
 function adjustRestSetting(d){var s=document.getElementById('restSettingSlider'),di=document.getElementById('restSettingDisplay');var v=parseInt(s.value)+d;v=Math.max(30,Math.min(300,v));s.value=v;di.textContent=v+'s';}
 function updateRestSettingFromSlider(v){document.getElementById('restSettingDisplay').textContent=v+'s';}
 function saveRestSetting(){setRestDuration(parseInt(document.getElementById('restSettingSlider').value));closeModal();renderSettings();showToast('Rest timer updated');}
 function exportData(){
-  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),exportDate:new Date().toISOString(),version:'1.4'};
+  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),exportDate:new Date().toISOString(),version:'1.5'};
   var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ulul-backup-'+new Date().toISOString().split('T')[0]+'.json';a.click();URL.revokeObjectURL(url);showToast('Data exported');
 }
 function importData(event){
