@@ -75,6 +75,7 @@ html, body {
   flex-shrink: 0; position: relative; z-index: 10;
 }
 .page-header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.header-logo { font-size:20px;font-weight:900;letter-spacing:-1px;background:linear-gradient(135deg,var(--accent),#5e5ce6,var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
 .page-header .header-btn {
   background: var(--bg-elevated); border: none; color: var(--accent);
   font-size: 15px; font-weight: 600; padding: 8px 14px;
@@ -471,18 +472,6 @@ textarea { resize: vertical; min-height: 60px; }
   <div class="sf-left"><div class="sf-name" id="sfName"></div><div class="sf-time" id="sfTime"></div></div>
   <div class="sf-right" id="sfProgress">Tap to return</div>
 </div>
-
-<div class="login-screen" id="loginScreen" style="display:none">
-  <div class="login-logo">ULUL</div>
-  <div style="font-size:15px;color:var(--text-secondary);margin-bottom:48px;text-align:center;line-height:1.5">Track your gains.<br>2 sets to failure.</div>
-  <button class="login-google-btn" onclick="doLoginSignIn()">
-    <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
-    Sign in with Google
-  </button>
-  <div class="login-loading" id="loginLoading" style="display:none">Signing in...</div>
-  <button class="login-skip" onclick="skipLogin()">Continue without signing in</button>
-  <div class="login-footer">Created by The Goat Himself</div>
-</div>
 <script>
 const NS='ulul_';
 const KEYS={sessions:NS+'sessions',customWorkouts:NS+'custom_workouts',restDuration:NS+'rest_duration',flags:NS+'flags',lastWorkout:NS+'last_workout',deletedDefaults:NS+'deleted_defaults',editedDefaults:NS+'edited_defaults',bodyWeight:NS+'body_weight',oledMode:NS+'oled_mode',activeSession:NS+'active_session',workoutOrder:NS+'workout_order'};
@@ -619,19 +608,13 @@ function fbSignOut(){
 }
 
 // Handle redirect result first (Safari PWA)
-fbAuth.getRedirectResult().then(function(result){
-  if(result&&result.user){fbUser=result.user;}
-}).catch(function(){});
+fbAuth.getRedirectResult().catch(function(){});
 
 // Listen for auth state changes
-var _loginTimeout=null;
 fbAuth.onAuthStateChanged(function(user){
   fbUser=user;
-  var loginEl=document.getElementById('loginScreen');
+  if(currentTab==='settings')renderSettings();
   if(user){
-    clearTimeout(_loginTimeout);
-    if(loginEl)loginEl.style.display='none';
-    if(currentTab==='settings')renderSettings();
     var localSessions=getSessions();
     if(localSessions.length===0){
       fbPull().then(function(data){
@@ -639,34 +622,13 @@ fbAuth.onAuthStateChanged(function(user){
           restoreAllData(data);restoreSession();
           showToast('Data restored from cloud');
           if(currentTab==='today')renderToday();
-          if(currentTab==='settings')renderSettings();
         }
       });
     } else {
       fbPush();
     }
-  } else {
-    _loginTimeout=setTimeout(function(){
-      if(!fbUser&&loginEl)loginEl.style.display='flex';
-      if(currentTab==='settings')renderSettings();
-    },2000);
   }
 });
-
-function doLoginSignIn(){
-  var loadingEl=document.getElementById('loginLoading');
-  if(loadingEl)loadingEl.style.display='block';
-  fbSignIn().then(function(){
-    showToast('Signed in!');
-  }).catch(function(){
-    if(loadingEl)loadingEl.style.display='none';
-  });
-}
-
-function skipLogin(){
-  var loginEl=document.getElementById('loginScreen');
-  if(loginEl)loginEl.style.display='none';
-}
 
 
 /* STATE */
@@ -722,7 +684,8 @@ function doSwitchTab(tab){
   $$('.tab-page').forEach(p=>p.classList.toggle('active',p.id==='tab-'+tab));
   const titles={today:'Today',history:'History',calendar:'Calendar',workouts:'Workouts',settings:'Settings'};
   $('#pageTitle').textContent=activeSession&&tab==='today'?activeSession.workoutName:titles[tab];
-  $('#headerActions').innerHTML=activeSession&&tab==='today'?'<button class="header-btn" onclick="discardSession()">Cancel</button>':'';
+  var headerRight=activeSession&&tab==='today'?'<button class="header-btn" onclick="discardSession()">Cancel</button>':(tab==='today'?'<span class="header-logo">ULUL</span>':'');
+  $('#headerActions').innerHTML=headerRight;
   if(tab==='today')renderToday();if(tab==='history')renderHistory();
   if(tab==='calendar')renderCalendar();
   if(tab==='workouts'){workoutSelectMode=false;workoutSelected.clear();renderWorkouts();}
