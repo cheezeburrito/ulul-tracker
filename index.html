@@ -703,7 +703,13 @@ function startRestTimer(){
     restTimerRemaining=Math.ceil((restTimerEndTime-Date.now())/1000);
     if(restTimerRemaining<=0){
       // Overtime mode: show negative timer
-      if(restTimerRemaining===0&&navigator.vibrate)navigator.vibrate([200,100,200]);
+      if(restTimerRemaining===0){
+        if(navigator.vibrate)navigator.vibrate([200,100,200]);
+        // Send push notification if app is backgrounded
+        if(document.hidden&&Notification&&Notification.permission==='granted'){
+          try{new Notification('ULUL Tracker',{body:'Rest time is up! Get back to it.',icon:'https://cheezeburrito.github.io/ulul-tracker/preview.png',tag:'rest-timer'});}catch(e){}
+        }
+      }
       var over=Math.abs(restTimerRemaining);
       $('#restTimerDisplay').textContent='-'+formatTimer(over);
       $('#restTimerDisplay').classList.add('overtime');
@@ -930,6 +936,8 @@ function beginSession(wid,version){
         })};
     })};
   startSessionTimer();persistSession();renderActiveSession();
+  // Request notification permission for rest timer alerts
+  if(Notification&&Notification.permission==='default'){Notification.requestPermission();}
 }
 
 /* ACTIVE SESSION */
