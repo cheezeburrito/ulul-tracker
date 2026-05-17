@@ -18,7 +18,7 @@
 <meta name="apple-mobile-web-app-title" content="ULUL Tracker">
 <meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMDAwIi8+PHRleHQgeD0iOTAiIHk9IjEwNSIgZm9udC1mYW1pbHk9Ii1hcHBsZS1zeXN0ZW0sIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDgiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlVMVUw8L3RleHQ+PC9zdmc+">
+<link rel="apple-touch-icon" href="https://cheezeburrito.github.io/ulul-tracker/preview.png">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -1252,7 +1252,7 @@ function clearAllData(){showConfirm('Clear All Data?','This permanently deletes 
 
 /* PWA */
 (function(){
-  var m={name:'ULUL Tracker',short_name:'ULUL',description:'ULUL split tracker',start_url:'./',display:'standalone',background_color:'#000000',theme_color:'#000000',icons:[{src:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxODAgMTgwIj48cmVjdCB3aWR0aD0iMTgwIiBoZWlnaHQ9IjE4MCIgcng9IjQwIiBmaWxsPSIjMDAwIi8+PHRleHQgeD0iOTAiIHk9IjEwNSIgZm9udC1mYW1pbHk9Ii1hcHBsZS1zeXN0ZW0sIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iNDgiIGZvbnQtd2VpZ2h0PSI3MDAiIGZpbGw9IiNmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPlVMVUw8L3RleHQ+PC9zdmc+',sizes:'180x180',type:'image/svg+xml',purpose:'any'}]};
+  var m={name:'ULUL Tracker',short_name:'ULUL',description:'ULUL split tracker',start_url:'./',display:'standalone',background_color:'#000000',theme_color:'#000000',icons:[{src:'https://cheezeburrito.github.io/ulul-tracker/preview.png',sizes:'512x512',type:'image/png',purpose:'any'}]};
   var b=new Blob([JSON.stringify(m)],{type:'application/json'});var l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(b);document.head.appendChild(l);
 })();
 (function(){
