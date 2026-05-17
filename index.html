@@ -619,16 +619,17 @@ function fbSignOut(){
 }
 
 // Handle redirect result first (Safari PWA)
-var _authReady=false;
 fbAuth.getRedirectResult().then(function(result){
   if(result&&result.user){fbUser=result.user;}
-}).catch(function(){}).finally(function(){_authReady=true;});
+}).catch(function(){});
 
 // Listen for auth state changes
+var _loginTimeout=null;
 fbAuth.onAuthStateChanged(function(user){
   fbUser=user;
   var loginEl=document.getElementById('loginScreen');
   if(user){
+    clearTimeout(_loginTimeout);
     if(loginEl)loginEl.style.display='none';
     if(currentTab==='settings')renderSettings();
     var localSessions=getSessions();
@@ -645,11 +646,10 @@ fbAuth.onAuthStateChanged(function(user){
       fbPush();
     }
   } else {
-    // Only show login if redirect has been processed
-    setTimeout(function(){
+    _loginTimeout=setTimeout(function(){
       if(!fbUser&&loginEl)loginEl.style.display='flex';
       if(currentTab==='settings')renderSettings();
-    },1500);
+    },2000);
   }
 });
 
