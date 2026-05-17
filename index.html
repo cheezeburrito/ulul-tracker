@@ -1230,7 +1230,7 @@ function renderSettings(){
 }
 
 /* FIREBASE UI HANDLERS */
-function doFbSignIn(){fbSignIn().then(function(){showToast('Signed in!');}).catch(function(){});}
+function doFbSignIn(){fbSignIn().then(function(result){showToast('Signed in as '+result.user.displayName);renderSettings();}).catch(function(err){showToast('Error: '+err.code+' - '+err.message);});}
 function doFbSignOut(){showConfirm('Sign Out?','Your cloud data stays safe. Sign back in anytime to restore.',function(){fbSignOut().then(function(){showToast('Signed out');renderSettings();});});}
 async function doFbPush(){showToast('Syncing...');var ok=await fbPush();showToast(ok?'Synced to cloud!':'Sync failed');}
 function doFbPull(){showConfirm('Restore from Cloud?','This will replace all local data with your cloud backup.',function(){fbPull().then(function(data){if(data){restoreAllData(data);restoreSession();showToast('Restored!');switchTab('today');}else{showToast('No cloud data found');}});});}
