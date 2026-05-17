@@ -296,6 +296,20 @@ textarea { resize: vertical; min-height: 60px; }
 .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-state p { font-size: 15px; line-height: 1.5; }
 
+/* CLOUD SYNC */
+.sync-login { background: var(--bg-card); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 12px; border: 0.5px solid var(--border-color); }
+.sync-login-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.sync-login-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.4; }
+.sync-form { display: flex; flex-direction: column; gap: 10px; }
+.sync-form input { font-size: 15px; padding: 12px 14px; }
+.sync-status { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--bg-card); border-radius: var(--radius-md); margin-bottom: 12px; border: 0.5px solid var(--border-color); }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sync-dot.online { background: var(--green); }
+.sync-dot.offline { background: var(--text-tertiary); }
+.sync-info { flex: 1; }
+.sync-info-label { font-size: 14px; font-weight: 600; }
+.sync-info-sub { font-size: 11px; color: var(--text-secondary); }
+
 /* STATS / TODAY CARDS */
 .stats-row { display: flex; gap: 10px; margin-bottom: 12px; }
 .stat-card { flex: 1; background: var(--bg-card); border-radius: var(--radius-md); padding: 14px; border: 0.5px solid var(--border-color); text-align: center; }
@@ -463,6 +477,7 @@ function applyOled(){if(getOledMode())document.body.classList.add('oled');else d
 function persistSession(){
   if(activeSession){saveJSON(KEYS.activeSession,activeSession);}
   else{localStorage.removeItem(KEYS.activeSession);}
+  autoSync();
 }
 function restoreSession(){
   var saved=loadJSON(KEYS.activeSession,null);
@@ -476,6 +491,109 @@ function restoreSession(){
 function clearPersistedSession(){localStorage.removeItem(KEYS.activeSession);}
 function getWorkoutOrder(){return loadJSON(KEYS.workoutOrder,[]);}
 function saveWorkoutOrder(o){saveJSON(KEYS.workoutOrder,o);}
+
+/* ============================================================
+   CLOUD SYNC: passphrase-based backup via jsonblob.com
+   ============================================================ */
+var syncBlobId=localStorage.getItem(NS+'sync_blob_id')||null;
+var syncPassphrase=localStorage.getItem(NS+'sync_passphrase')||null;
+var syncLastPush=localStorage.getItem(NS+'sync_last_push')||null;
+
+function getAllData(){
+  return{sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),activeSession:loadJSON(KEYS.activeSession,null),syncDate:new Date().toISOString(),version:'1.4'};
+}
+
+function restoreAllData(data){
+  if(data.sessions)saveSessions(data.sessions);
+  if(data.customWorkouts)saveCustomWorkouts(data.customWorkouts);
+  if(data.flags)saveFlags(data.flags);
+  if(data.restDuration)setRestDuration(data.restDuration);
+  if(data.lastWorkout)setLastWorkout(data.lastWorkout);
+  if(data.deletedDefaults)saveDeletedDefaults(data.deletedDefaults);
+  if(data.editedDefaults)saveEditedDefaults(data.editedDefaults);
+  if(data.bodyWeight)saveBodyWeightLog(data.bodyWeight);
+  if(data.workoutOrder)saveWorkoutOrder(data.workoutOrder);
+  if(data.activeSession)saveJSON(KEYS.activeSession,data.activeSession);
+}
+
+async function hashPassphrase(p){
+  var enc=new TextEncoder().encode(p);
+  var hash=await crypto.subtle.digest('SHA-256',enc);
+  return Array.from(new Uint8Array(hash)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+}
+
+async function cloudPush(){
+  if(!syncBlobId||!syncPassphrase)return false;
+  try{
+    var payload={passHash:await hashPassphrase(syncPassphrase),data:getAllData()};
+    var r=await fetch('https://jsonblob.com/api/jsonBlob/'+syncBlobId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(r.ok){syncLastPush=new Date().toISOString();localStorage.setItem(NS+'sync_last_push',syncLastPush);return true;}
+    return false;
+  }catch(e){return false;}
+}
+
+async function cloudPull(){
+  if(!syncBlobId||!syncPassphrase)return null;
+  try{
+    var r=await fetch('https://jsonblob.com/api/jsonBlob/'+syncBlobId);
+    if(!r.ok)return null;
+    var blob=await r.json();
+    var myHash=await hashPassphrase(syncPassphrase);
+    if(blob.passHash!==myHash){showToast('Wrong passphrase');return null;}
+    return blob.data;
+  }catch(e){return null;}
+}
+
+async function cloudSignup(passphrase){
+  try{
+    var payload={passHash:await hashPassphrase(passphrase),data:getAllData()};
+    var r=await fetch('https://jsonblob.com/api/jsonBlob',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(r.ok){
+      var loc=r.headers.get('Location')||r.headers.get('location');
+      var id=loc?loc.split('/').pop():null;
+      if(!id){var d=await r.json();id=r.url.split('/').pop();}
+      if(id){
+        syncBlobId=id;syncPassphrase=passphrase;
+        localStorage.setItem(NS+'sync_blob_id',id);
+        localStorage.setItem(NS+'sync_passphrase',passphrase);
+        syncLastPush=new Date().toISOString();
+        localStorage.setItem(NS+'sync_last_push',syncLastPush);
+        return true;
+      }
+    }
+    return false;
+  }catch(e){return false;}
+}
+
+async function cloudLogin(blobId,passphrase){
+  syncBlobId=blobId;syncPassphrase=passphrase;
+  var data=await cloudPull();
+  if(data){
+    localStorage.setItem(NS+'sync_blob_id',blobId);
+    localStorage.setItem(NS+'sync_passphrase',passphrase);
+    restoreAllData(data);
+    var restored=restoreSession();
+    return true;
+  }
+  syncBlobId=null;syncPassphrase=null;
+  return false;
+}
+
+function cloudLogout(){
+  syncBlobId=null;syncPassphrase=null;syncLastPush=null;
+  localStorage.removeItem(NS+'sync_blob_id');
+  localStorage.removeItem(NS+'sync_passphrase');
+  localStorage.removeItem(NS+'sync_last_push');
+}
+
+/* Auto-push after changes, debounced to avoid hammering */
+var _syncTimer=null;
+function autoSync(){
+  if(!syncBlobId||!syncPassphrase)return;
+  clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(function(){cloudPush();},5000);
+}
+
 
 /* STATE */
 let currentTab='today';
@@ -790,7 +908,7 @@ function renderActiveSession(){
       html+='<div class="set-row '+(set.completed?'completed':'')+'" id="set-'+exIdx+'-'+setIdx+'"><div class="set-num">'+(setIdx+1)+'</div><input type="number" class="set-input '+af+'" value="'+set.weight+'" placeholder="lbs" onchange="updateSet('+exIdx+','+setIdx+',\'weight\',this.value)" onfocus="clearAutofill(this)" inputmode="decimal"><input type="number" class="set-input" value="'+set.reps+'" placeholder="'+ex.targetReps+'" onchange="updateSet('+exIdx+','+setIdx+',\'reps\',this.value)" inputmode="numeric"><button class="rir-btn '+rc+'" onclick="cycleRIR('+exIdx+','+setIdx+')">'+rl+'</button><button class="fail-check '+(set.failure?'checked':'')+'" onclick="toggleFailure('+exIdx+','+setIdx+')">'+(set.failure?'✕':'')+'</button><button class="done-check '+(set.completed?'checked':'')+'" onclick="toggleComplete('+exIdx+','+setIdx+')">'+(set.completed?'✓':'')+'</button></div>';
     });
     html+='</div>';
-    html+='<div class="ex-footer"><button class="ex-footer-btn btn-add-set" onclick="addSet('+exIdx+')">+ Set</button>'+(ex.sets.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="removeSet('+exIdx+')">- Set</button>':'')+'<button class="ex-footer-btn btn-flag-up '+(ex.flagUp?'active':'')+'" onclick="toggleFlag('+exIdx+',\'up\')">▲ Up</button><button class="ex-footer-btn btn-flag-down '+(ex.flagDown?'active':'')+'" onclick="toggleFlag('+exIdx+',\'down\')">▼ Down</button><button class="ex-footer-btn btn-notes-toggle" onclick="toggleNotes('+exIdx+')">📝</button></div><div class="ex-notes-area '+(ex.showNotes?'visible':'')+'" id="notes-area-'+exIdx+'"><textarea placeholder="Notes..." onchange="updateNotes('+exIdx+',this.value)">'+(ex.notes||'')+'</textarea></div>';
+    html+='<div class="ex-footer"><button class="ex-footer-btn btn-add-set" onclick="addSet('+exIdx+')">+ Set</button>'+(ex.sets.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="removeSet('+exIdx+')">- Set</button>':'')+'<button class="ex-footer-btn btn-flag-up '+(ex.flagUp?'active':'')+'" onclick="toggleFlag('+exIdx+',\'up\')">▲ Up</button><button class="ex-footer-btn btn-flag-down '+(ex.flagDown?'active':'')+'" onclick="toggleFlag('+exIdx+',\'down\')">▼ Down</button><button class="ex-footer-btn btn-notes-toggle" onclick="toggleNotes('+exIdx+')">📝</button>'+(activeSession.exercises.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="deleteExercise('+exIdx+')" style="margin-left:auto;background:var(--red-dim);color:var(--red)">✕ Remove</button>':'')+'</div><div class="ex-notes-area '+(ex.showNotes?'visible':'')+'" id="notes-area-'+exIdx+'"><textarea placeholder="Notes..." onchange="updateNotes('+exIdx+',this.value)">'+(ex.notes||'')+'</textarea></div>';
     html+='</div>';
   });
   html+='<div style="padding:16px 0 32px;display:flex;gap:10px"><button class="btn btn-green btn-block" onclick="saveSession()" style="flex:2">Save Session</button><button class="btn btn-red btn-block" onclick="discardSession()" style="flex:1">Discard</button></div>';
@@ -809,6 +927,13 @@ function toggleFlag(ei,dir){if(!activeSession)return;var ex=activeSession.exerci
 function toggleNotes(ei){if(!activeSession)return;activeSession.exercises[ei].showNotes=!activeSession.exercises[ei].showNotes;var a=document.getElementById('notes-area-'+ei);if(a)a.classList.toggle('visible');}
 function updateNotes(ei,v){if(!activeSession)return;activeSession.exercises[ei].notes=v;persistSession();}
 function moveExercise(ei,dir){if(!activeSession)return;var ni=ei+dir;if(ni<0||ni>=activeSession.exercises.length)return;var a=activeSession.exercises;var tmp=a[ei];a[ei]=a[ni];a[ni]=tmp;persistSession();renderActiveSession();}
+function deleteExercise(ei){
+  if(!activeSession||activeSession.exercises.length<=1)return;
+  var name=activeSession.exercises[ei].name;
+  showConfirm('Remove '+name+'?','This exercise will be removed from the current session.',function(){
+    activeSession.exercises.splice(ei,1);persistSession();renderActiveSession();showToast(name+' removed');
+  },'Remove',true);
+}
 
 /* SWAP MODAL with search */
 function showSwapModal(exIdx){
@@ -837,7 +962,9 @@ function saveSession(){
   var session={id:generateId(),workoutId:activeSession.workoutId,workoutName:activeSession.workoutName,version:activeSession.version,date:new Date().toISOString(),startTime:activeSession.startTime,
     exercises:activeSession.exercises.map(function(ex){return{name:ex.name,notes:ex.notes||'',flagUp:ex.flagUp,flagDown:ex.flagDown,sets:ex.sets.map(function(s){return{weight:s.weight,reps:s.reps,rir:s.rir,failure:s.failure,completed:s.completed};})};})};
   var sessions=getSessions();sessions.push(session);saveSessions(sessions);setLastWorkout(activeSession.workoutId);
-  activeSession=null;clearPersistedSession();if(navigator.vibrate)navigator.vibrate([50,30,50]);showToast('Session saved!');renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';
+  activeSession=null;clearPersistedSession();if(navigator.vibrate)navigator.vibrate([50,30,50]);showToast('Session saved!');
+  if(syncBlobId&&syncPassphrase)cloudPush();
+  renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';
   // Auto-export reminder
   setTimeout(function(){
     showConfirm('Back Up Your Data?','Export a backup to protect against browser data loss. Recommended after every session.',function(){exportData();},'Export Now');
@@ -1037,7 +1164,70 @@ function renderSettings(){
   var container=$('#tab-settings');var rd=getRestDuration();
   var hasModified=getDeletedDefaults().length>0||Object.keys(getEditedDefaults()).length>0;
   var oled=getOledMode();
-  container.innerHTML='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div></div><div class="section-header">Appearance</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">OLED Black Mode</span><button class="toggle-switch '+(oled?'on':'')+'" onclick="setOledMode(!getOledMode());renderSettings()"></button></div></div><div class="section-header">Data</div><div class="settings-group"><div class="settings-row" onclick="exportData()"><span class="sr-label">Export All Data</span><span class="sr-value">JSON ›</span></div><div class="settings-row" onclick="document.getElementById(\'importInput\').click()"><span class="sr-label">Import Data</span><span class="sr-value">JSON ›</span></div>'+(hasModified?'<div class="settings-row" onclick="resetDefaults()"><span class="sr-label">Reset Default Workouts</span><span class="sr-value">›</span></div>':'')+'<div class="settings-row" onclick="clearAllData()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Clear All Data</span><span class="sr-value" style="color:var(--red)">›</span></div></div><input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)"><div class="section-header">About</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">ULUL Tracker</span><span class="sr-value">v1.3</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Protocol</span><span class="sr-value">2 sets to failure</span></div></div><div style="text-align:center;padding:24px;color:var(--text-tertiary);font-size:12px">All data stored locally on this device.</div>';
+  var loggedIn=!!syncBlobId;
+  var html='';
+
+  // Cloud Sync section
+  html+='<div class="section-header">Cloud Sync</div>';
+  if(loggedIn){
+    html+='<div class="sync-status"><div class="sync-dot online"></div><div class="sync-info"><div class="sync-info-label">Synced</div><div class="sync-info-sub">'+(syncLastPush?'Last backup: '+formatDate(syncLastPush)+' '+formatTime(syncLastPush):'Not yet synced')+'</div></div></div>';
+    html+='<div class="settings-group"><div class="settings-row" onclick="doCloudPush()"><span class="sr-label">Sync Now</span><span class="sr-value">↑ Push</span></div><div class="settings-row" onclick="doCloudPull()"><span class="sr-label">Restore from Cloud</span><span class="sr-value">↓ Pull</span></div><div class="settings-row" onclick="showSyncId()"><span class="sr-label">My Sync ID</span><span class="sr-value">Copy ›</span></div><div class="settings-row" onclick="doCloudLogout()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Log Out</span><span class="sr-value" style="color:var(--red)">›</span></div></div>';
+  }else{
+    html+='<div class="sync-login"><div class="sync-login-title">Back Up to Cloud</div><div class="sync-login-sub">Create a passphrase to sync your data across devices. If Safari clears your cache, just log back in to restore everything.</div><div class="sync-form"><input type="text" id="syncPass" placeholder="Choose a passphrase" autocomplete="off"><button class="btn btn-primary btn-block" onclick="doCloudSignup()">Create Backup</button></div><div style="margin-top:16px;padding-top:16px;border-top:0.5px solid var(--border-subtle)"><div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px;font-weight:500">Already have a backup?</div><div class="sync-form"><input type="text" id="syncLoginId" placeholder="Sync ID"><input type="text" id="syncLoginPass" placeholder="Passphrase" autocomplete="off"><button class="btn btn-secondary btn-block" onclick="doCloudLogin()">Restore Backup</button></div></div></div>';
+  }
+
+  html+='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div></div>';
+  html+='<div class="section-header">Appearance</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">OLED Black Mode</span><button class="toggle-switch '+(oled?'on':'')+'" onclick="setOledMode(!getOledMode());renderSettings()"></button></div></div>';
+  html+='<div class="section-header">Data</div><div class="settings-group"><div class="settings-row" onclick="exportData()"><span class="sr-label">Export All Data</span><span class="sr-value">JSON ›</span></div><div class="settings-row" onclick="document.getElementById(\'importInput\').click()"><span class="sr-label">Import Data</span><span class="sr-value">JSON ›</span></div>'+(hasModified?'<div class="settings-row" onclick="resetDefaults()"><span class="sr-label">Reset Default Workouts</span><span class="sr-value">›</span></div>':'')+'<div class="settings-row" onclick="clearAllData()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Clear All Data</span><span class="sr-value" style="color:var(--red)">›</span></div></div><input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">';
+  html+='<div class="section-header">About</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">ULUL Tracker</span><span class="sr-value">v1.4</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Protocol</span><span class="sr-value">2 sets to failure</span></div></div>';
+  html+='<div style="text-align:center;padding:24px;color:var(--text-tertiary);font-size:12px">All data stored locally + cloud when synced.</div>';
+  container.innerHTML=html;
+}
+
+/* CLOUD SYNC UI HANDLERS */
+async function doCloudSignup(){
+  var pass=document.getElementById('syncPass');if(!pass)return;
+  var p=pass.value.trim();
+  if(p.length<4){showToast('Passphrase must be at least 4 characters');return;}
+  showToast('Creating backup...');
+  var ok=await cloudSignup(p);
+  if(ok){showToast('Backup created!');renderSettings();}
+  else{showToast('Failed to create backup');}
+}
+async function doCloudLogin(){
+  var idEl=document.getElementById('syncLoginId');var passEl=document.getElementById('syncLoginPass');
+  if(!idEl||!passEl)return;
+  var id=idEl.value.trim();var p=passEl.value.trim();
+  if(!id||!p){showToast('Enter both Sync ID and passphrase');return;}
+  showToast('Restoring...');
+  var ok=await cloudLogin(id,p);
+  if(ok){showToast('Data restored!');renderSettings();}
+  else{showToast('Wrong ID or passphrase');}
+}
+async function doCloudPush(){
+  showToast('Syncing...');
+  var ok=await cloudPush();
+  showToast(ok?'Synced!':'Sync failed');
+  if(ok)renderSettings();
+}
+async function doCloudPull(){
+  showConfirm('Restore from Cloud?','This will replace all local data with your cloud backup.',async function(){
+    showToast('Restoring...');
+    var data=await cloudPull();
+    if(data){restoreAllData(data);restoreSession();showToast('Restored!');renderSettings();}
+    else{showToast('Restore failed');}
+  });
+}
+function showSyncId(){
+  openModal('<div class="modal-title">Your Sync ID</div><p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:16px">Use this ID + your passphrase to restore on any device.</p><div style="background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:14px;text-align:center;font-size:15px;font-weight:600;font-family:monospace;word-break:break-all;margin-bottom:16px" id="syncIdDisplay">'+syncBlobId+'</div><button class="btn btn-primary btn-block" onclick="copySyncId()">Copy Sync ID</button>');
+}
+function copySyncId(){
+  if(syncBlobId){navigator.clipboard.writeText(syncBlobId).then(function(){showToast('Copied!');}).catch(function(){showToast('Copy failed, select manually');});}
+}
+function doCloudLogout(){
+  showConfirm('Log Out?','Your cloud backup will remain. You can restore it anytime with your Sync ID and passphrase.',function(){
+    cloudLogout();renderSettings();showToast('Logged out');
+  });
 }
 function resetDefaults(){showConfirm('Reset Default Workouts?','This restores all 4 defaults to their original state and resets workout order.',function(){saveDeletedDefaults([]);saveEditedDefaults({});saveWorkoutOrder([]);renderSettings();showToast('Defaults restored');});}
 function openRestTimerSetting(){var c=getRestDuration();openModal('<div class="modal-title">Rest Timer</div><p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:20px">Default rest duration between sets</p><div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px"><button class="btn btn-secondary" onclick="adjustRestSetting(-15)">-15s</button><div style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;width:80px;text-align:center" id="restSettingDisplay">'+c+'s</div><button class="btn btn-secondary" onclick="adjustRestSetting(15)">+15s</button></div><input type="range" id="restSettingSlider" min="30" max="300" step="15" value="'+c+'" oninput="updateRestSettingFromSlider(this.value)" style="width:100%;margin-bottom:20px;accent-color:var(--accent)"><button class="btn btn-primary btn-block" onclick="saveRestSetting()">Save</button>');}
@@ -1045,7 +1235,7 @@ function adjustRestSetting(d){var s=document.getElementById('restSettingSlider')
 function updateRestSettingFromSlider(v){document.getElementById('restSettingDisplay').textContent=v+'s';}
 function saveRestSetting(){setRestDuration(parseInt(document.getElementById('restSettingSlider').value));closeModal();renderSettings();showToast('Rest timer updated');}
 function exportData(){
-  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),exportDate:new Date().toISOString(),version:'1.3'};
+  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),exportDate:new Date().toISOString(),version:'1.4'};
   var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ulul-backup-'+new Date().toISOString().split('T')[0]+'.json';a.click();URL.revokeObjectURL(url);showToast('Data exported');
 }
 function importData(event){
