@@ -472,7 +472,7 @@ textarea { resize: vertical; min-height: 60px; }
   <div class="sf-right" id="sfProgress">Tap to return</div>
 </div>
 
-<div class="login-screen" id="loginScreen">
+<div class="login-screen" id="loginScreen" style="display:none">
   <div class="login-logo">ULUL</div>
   <div style="font-size:15px;color:var(--text-secondary);margin-bottom:48px;text-align:center;line-height:1.5">Track your gains.<br>2 sets to failure.</div>
   <button class="login-google-btn" onclick="doLoginSignIn()">
@@ -618,16 +618,19 @@ function fbSignOut(){
   return fbAuth.signOut();
 }
 
+// Handle redirect result first (Safari PWA)
+var _authReady=false;
+fbAuth.getRedirectResult().then(function(result){
+  if(result&&result.user){fbUser=result.user;}
+}).catch(function(){}).finally(function(){_authReady=true;});
+
 // Listen for auth state changes
 fbAuth.onAuthStateChanged(function(user){
   fbUser=user;
   var loginEl=document.getElementById('loginScreen');
   if(user){
-    // Dismiss login screen
     if(loginEl)loginEl.style.display='none';
-    // If we're on settings tab, re-render to show login state
     if(currentTab==='settings')renderSettings();
-    // Pull cloud data if local is empty
     var localSessions=getSessions();
     if(localSessions.length===0){
       fbPull().then(function(data){
@@ -642,14 +645,13 @@ fbAuth.onAuthStateChanged(function(user){
       fbPush();
     }
   } else {
-    // Show login screen if not signed in
-    if(loginEl)loginEl.style.display='flex';
-    if(currentTab==='settings')renderSettings();
+    // Only show login if redirect has been processed
+    setTimeout(function(){
+      if(!fbUser&&loginEl)loginEl.style.display='flex';
+      if(currentTab==='settings')renderSettings();
+    },1500);
   }
 });
-
-// Also check redirect result for Safari
-fbAuth.getRedirectResult().catch(function(){});
 
 function doLoginSignIn(){
   var loadingEl=document.getElementById('loginLoading');
