@@ -548,6 +548,7 @@ var fbApp=firebase.initializeApp({
   appId:"1:275274462257:web:9e546d37877493523b1110"
 });
 var fbAuth=firebase.auth();
+fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 var fbDb=firebase.database();
 var fbUser=null;
 var _fbSyncTimer=null;
@@ -588,27 +589,12 @@ function fbAutoSync(){
 
 function fbSignIn(){
   var provider=new firebase.auth.GoogleAuthProvider();
-  // iOS Safari and home screen PWAs block popups, use redirect instead
-  var isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  var isStandalone=window.navigator.standalone===true||window.matchMedia('(display-mode: standalone)').matches;
-  if(isIOS||isStandalone){
-    return fbAuth.signInWithRedirect(provider);
-  }
-  return fbAuth.signInWithPopup(provider).catch(function(err){
-    if(err.code==='auth/popup-blocked'||err.code==='auth/popup-closed-by-user'||err.code==='auth/cancelled-popup-request'){
-      return fbAuth.signInWithRedirect(provider);
-    }
-    showToast('Sign in failed');
-    throw err;
-  });
+  return fbAuth.signInWithPopup(provider);
 }
 
 function fbSignOut(){
   return fbAuth.signOut();
 }
-
-// Handle redirect result first (Safari PWA)
-fbAuth.getRedirectResult().catch(function(){});
 
 // Listen for auth state changes
 fbAuth.onAuthStateChanged(function(user){
