@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>ULUL Tracker</title>
+<meta property="og:title" content="ULUL Tracker">
+<meta property="og:description" content="Track your gains. 2 sets to failure.">
+<meta property="og:image" content="https://cheezeburrito.github.io/ulul-tracker/preview.png">
+<meta property="og:url" content="https://cheezeburrito.github.io/ulul-tracker/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ULUL Tracker">
+<meta name="twitter:description" content="Track your gains. 2 sets to failure.">
+<meta name="twitter:image" content="https://cheezeburrito.github.io/ulul-tracker/preview.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ULUL Tracker">
@@ -98,6 +107,12 @@ html, body {
   width: 24px; height: 24px; fill: none; stroke: currentColor;
   stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; overflow: visible;
 }
+.session-float { display:none;position:fixed;bottom:calc(60px + env(safe-area-inset-bottom,0px));left:12px;right:12px;background:linear-gradient(135deg,#1a1a2e,#16213e);border:0.5px solid rgba(10,132,255,0.4);border-radius:var(--radius-md);padding:10px 16px;z-index:999;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.5); }
+.session-float.visible { display:flex;align-items:center;justify-content:space-between;animation:fadeIn 0.2s ease; }
+.sf-left { display:flex;flex-direction:column;gap:2px; }
+.sf-name { font-size:14px;font-weight:600; }
+.sf-time { font-size:12px;color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums; }
+.sf-right { font-size:12px;color:var(--text-secondary);font-weight:600; }
 .card { background: var(--bg-card); border-radius: var(--radius-lg); padding: 16px; margin-bottom: 12px; border: 0.5px solid var(--border-color); }
 .card-title { font-size: 17px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
 .badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
@@ -298,6 +313,18 @@ textarea { resize: vertical; min-height: 60px; }
 .empty-state { text-align: center; padding: 48px 24px; color: var(--text-tertiary); }
 .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
 .empty-state p { font-size: 15px; line-height: 1.5; }
+.be-reorder { position:absolute;top:6px;right:8px;display:flex;flex-direction:column;gap:1px; }
+.be-reorder-btn { width:22px;height:14px;border-radius:3px;border:none;background:var(--bg-card);color:var(--text-tertiary);font-size:8px;cursor:pointer;display:flex;align-items:center;justify-content:center; }
+.builder-exercise .be-remove { right:36px; }
+.login-logo { font-size:52px;font-weight:900;letter-spacing:-2px;background:linear-gradient(135deg,var(--accent),#5e5ce6,var(--green));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+.login-footer { position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+20px);font-size:11px;color:var(--text-tertiary);letter-spacing:0.5px; }
+.rest-timer-display.overtime { color:var(--red); }
+.accent-picker { display:flex;gap:8px;flex-wrap:wrap;padding:8px 0; }
+.accent-swatch { width:32px;height:32px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:transform 0.15s; }
+.accent-swatch:active { transform:scale(0.9); }
+.accent-swatch.active { border-color:#fff;box-shadow:0 0 0 2px var(--accent); }
+.badge-incomplete { background:var(--orange-dim);color:var(--orange); }
+.hist-resume-btn { background:var(--accent-dim);color:var(--accent);border:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;cursor:pointer;font-family:inherit;margin-top:4px;margin-left:8px; }
 
 /* CLOUD SYNC */
 .login-screen { position: fixed; inset: 0; background: var(--bg-primary); z-index: 5000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; }
@@ -440,16 +467,21 @@ textarea { resize: vertical; min-height: 60px; }
   <div class="confirm-box" id="confirmBox"></div>
 </div>
 <div class="toast" id="toast"></div>
+<div id="sessionFloat" class="session-float" onclick="switchTab('today')">
+  <div class="sf-left"><div class="sf-name" id="sfName"></div><div class="sf-time" id="sfTime"></div></div>
+  <div class="sf-right" id="sfProgress">Tap to return</div>
+</div>
 
 <div class="login-screen" id="loginScreen">
   <div class="login-logo">ULUL</div>
-  <div class="login-sub">Track your workouts.<br>Sign in to sync across devices.</div>
+  <div style="font-size:15px;color:var(--text-secondary);margin-bottom:48px;text-align:center;line-height:1.5">Track your gains.<br>2 sets to failure.</div>
   <button class="login-google-btn" onclick="doLoginSignIn()">
     <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/><path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/><path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238A11.91 11.91 0 0 1 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/><path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"/></svg>
     Sign in with Google
   </button>
   <div class="login-loading" id="loginLoading" style="display:none">Signing in...</div>
   <button class="login-skip" onclick="skipLogin()">Continue without signing in</button>
+  <div class="login-footer">Created by The Goat Himself</div>
 </div>
 <script>
 const NS='ulul_';
@@ -567,12 +599,17 @@ function fbAutoSync(){
 
 function fbSignIn(){
   var provider=new firebase.auth.GoogleAuthProvider();
+  // iOS Safari and home screen PWAs block popups, use redirect instead
+  var isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  var isStandalone=window.navigator.standalone===true||window.matchMedia('(display-mode: standalone)').matches;
+  if(isIOS||isStandalone){
+    return fbAuth.signInWithRedirect(provider);
+  }
   return fbAuth.signInWithPopup(provider).catch(function(err){
-    // Fallback for Safari PWA where popup may fail
     if(err.code==='auth/popup-blocked'||err.code==='auth/popup-closed-by-user'||err.code==='auth/cancelled-popup-request'){
       return fbAuth.signInWithRedirect(provider);
     }
-    showToast('Sign in failed: '+err.message);
+    showToast('Sign in failed');
     throw err;
   });
 }
@@ -677,16 +714,18 @@ function getPreviousExerciseData(name,wid){
 }
 
 /* TABS */
-function switchTab(tab){if(activeSession&&tab!=='today'){showConfirm('Leave Session?','Your progress will remain until you save or discard.',()=>doSwitchTab(tab));return;}doSwitchTab(tab);}
+function switchTab(tab){doSwitchTab(tab);}
 function doSwitchTab(tab){
   currentTab=tab;$$('.tab-bar-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
   $$('.tab-page').forEach(p=>p.classList.toggle('active',p.id==='tab-'+tab));
   const titles={today:'Today',history:'History',calendar:'Calendar',workouts:'Workouts',settings:'Settings'};
-  $('#pageTitle').textContent=titles[tab];$('#headerActions').innerHTML='';
+  $('#pageTitle').textContent=activeSession&&tab==='today'?activeSession.workoutName:titles[tab];
+  $('#headerActions').innerHTML=activeSession&&tab==='today'?'<button class="header-btn" onclick="discardSession()">Cancel</button>':'';
   if(tab==='today')renderToday();if(tab==='history')renderHistory();
   if(tab==='calendar')renderCalendar();
   if(tab==='workouts'){workoutSelectMode=false;workoutSelected.clear();renderWorkouts();}
   if(tab==='settings')renderSettings();$('#tabContent').scrollTop=0;
+  updateSessionFloat();
 }
 $$('.tab-bar-btn').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 
@@ -711,7 +750,17 @@ function startRestTimer(){
   clearInterval(restTimerInterval);
   restTimerInterval=setInterval(function(){
     restTimerRemaining=Math.ceil((restTimerEndTime-Date.now())/1000);
-    if(restTimerRemaining<=0){dismissRestTimer();if(navigator.vibrate)navigator.vibrate([200,100,200]);return;}
+    if(restTimerRemaining<=0){
+      // Overtime mode: show negative timer
+      if(restTimerRemaining===0&&navigator.vibrate)navigator.vibrate([200,100,200]);
+      var over=Math.abs(restTimerRemaining);
+      $('#restTimerDisplay').textContent='-'+formatTimer(over);
+      $('#restTimerDisplay').classList.add('overtime');
+      $('#restTimerSub').textContent='Rest time over!';
+      return;
+    }
+    $('#restTimerDisplay').classList.remove('overtime');
+    $('#restTimerSub').textContent='Tap to dismiss';
     updateRestTimerDisplay();
   },250);
 }
@@ -737,8 +786,20 @@ window.addEventListener('pagehide',function(){if(activeSession)persistSession();
 window.addEventListener('beforeunload',function(){if(activeSession)persistSession();});
 
 /* SESSION ELAPSED TIMER */
-function startSessionTimer(){clearInterval(sessionTimerInterval);sessionTimerInterval=setInterval(function(){var el=document.getElementById('sessionElapsed');if(el&&activeSession)el.textContent=formatElapsed(activeSession.startTime);},1000);}
+function startSessionTimer(){clearInterval(sessionTimerInterval);sessionTimerInterval=setInterval(function(){var el=document.getElementById('sessionElapsed');if(el&&activeSession)el.textContent=formatElapsed(activeSession.startTime);var sft=document.getElementById('sfTime');if(sft&&activeSession)sft.textContent=formatElapsed(activeSession.startTime);},1000);}
 function stopSessionTimer(){clearInterval(sessionTimerInterval);sessionTimerInterval=null;}
+
+function updateSessionFloat(){
+  var el=document.getElementById('sessionFloat');if(!el)return;
+  if(activeSession&&currentTab!=='today'){
+    el.classList.add('visible');
+    var n=document.getElementById('sfName');if(n)n.textContent=activeSession.workoutName;
+    var t=document.getElementById('sfTime');if(t)t.textContent=formatElapsed(activeSession.startTime);
+    var ds=activeSession.exercises.reduce(function(a,e){return a+e.sets.filter(function(s){return s.completed;}).length;},0);
+    var ts=activeSession.exercises.reduce(function(a,e){return a+e.sets.length;},0);
+    var p=document.getElementById('sfProgress');if(p)p.textContent=ds+'/'+ts+' sets';
+  }else{el.classList.remove('visible');}
+}
 
 /* PR DETECTION */
 function getAllPRs(){
@@ -1000,10 +1061,6 @@ function saveSession(){
   activeSession=null;clearPersistedSession();if(navigator.vibrate)navigator.vibrate([50,30,50]);showToast('Session saved!');
   fbPush();
   renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';
-  // Auto-export reminder
-  setTimeout(function(){
-    showConfirm('Back Up Your Data?','Export a backup to protect against browser data loss. Recommended after every session.',function(){exportData();},'Export Now');
-  },800);
 }
 function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
 
@@ -1173,7 +1230,7 @@ function renderBuilder(){
   html+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn btn-secondary btn-block" onclick="closeModal()">Cancel</button><button class="btn btn-primary btn-block" onclick="saveBuilder()">Save</button></div>';
   openModal(html);
 }
-function renderBuilderExercises(exs,key){var html='';exs.forEach(function(ex,i){html+='<div class="builder-exercise"><button class="be-remove" onclick="removeBuilderExercise(\''+key+'\','+i+')">✕</button><div class="be-row"><input type="text" value="'+ex.name+'" placeholder="Exercise name" onchange="updateBuilderExercise(\''+key+'\','+i+',\'name\',this.value)" style="flex:1"></div><div class="be-row"><div style="flex:1"><label class="label">Sets</label><input type="number" value="'+ex.sets+'" min="1" max="10" onchange="updateBuilderExercise(\''+key+'\','+i+',\'sets\',parseInt(this.value))"></div><div style="flex:1"><label class="label">Reps</label><input type="text" value="'+ex.reps+'" placeholder="8-12" onchange="updateBuilderExercise(\''+key+'\','+i+',\'reps\',this.value)"></div></div></div>';});return html;}
+function renderBuilderExercises(exs,key){var html='';exs.forEach(function(ex,i){html+='<div class="builder-exercise"><button class="be-remove" onclick="removeBuilderExercise(\''+key+'\','+i+')">✕</button><div class="be-reorder"><button class="be-reorder-btn" onclick="moveBuilderExercise(\''+key+'\','+i+',-1)" '+(i===0?'disabled':'')+'>▲</button><button class="be-reorder-btn" onclick="moveBuilderExercise(\''+key+'\','+i+',1)" '+(i===exs.length-1?'disabled':'')+'>▼</button></div><div class="be-row"><input type="text" value="'+ex.name+'" placeholder="Exercise name" onchange="updateBuilderExercise(\''+key+'\','+i+',\'name\',this.value)" style="flex:1"></div><div class="be-row"><div style="flex:1"><label class="label">Sets</label><input type="number" value="'+ex.sets+'" min="1" max="10" onchange="updateBuilderExercise(\''+key+'\','+i+',\'sets\',parseInt(this.value))"></div><div style="flex:1"><label class="label">Reps</label><input type="text" value="'+ex.reps+'" placeholder="8-12" onchange="updateBuilderExercise(\''+key+'\','+i+',\'reps\',this.value)"></div></div></div>';});return html;}
 function toggleBuilderVersions(){
   builderState.hasVersions=!builderState.hasVersions;
   if(builderState.hasVersions){if(!builderState.short||!builderState.short.length)builderState.short=builderState.exercises?builderState.exercises.slice():[{name:'',sets:2,reps:'8-12'}];if(!builderState.optimal||!builderState.optimal.length)builderState.optimal=builderState.exercises?builderState.exercises.slice():[{name:'',sets:2,reps:'8-12'}];}
@@ -1182,6 +1239,7 @@ function toggleBuilderVersions(){
 }
 function addBuilderExercise(k){if(!builderState[k])builderState[k]=[];builderState[k].push({name:'',sets:2,reps:'8-12'});renderBuilder();}
 function removeBuilderExercise(k,i){builderState[k].splice(i,1);renderBuilder();}
+function moveBuilderExercise(k,i,dir){var arr=builderState[k];if(!arr)return;var ni=i+dir;if(ni<0||ni>=arr.length)return;var tmp=arr[i];arr[i]=arr[ni];arr[ni]=tmp;renderBuilder();}
 function updateBuilderExercise(k,i,f,v){builderState[k][i][f]=v;}
 function saveBuilder(){
   if(!builderState.name.trim()){showToast('Please enter a workout name');return;}
@@ -1213,9 +1271,9 @@ function renderSettings(){
   }
 
   html+='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div></div>';
-  html+='<div class="section-header">Appearance</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">OLED Black Mode</span><button class="toggle-switch '+(oled?'on':'')+'" onclick="setOledMode(!getOledMode());renderSettings()"></button></div></div>';
+  html+='<div class="section-header">Appearance</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">OLED Black Mode</span><button class="toggle-switch '+(oled?'on':'')+'" onclick="setOledMode(!getOledMode());renderSettings()"></button></div><div class="settings-row" style="cursor:default;flex-direction:column;align-items:flex-start;gap:8px"><span class="sr-label">Accent Color</span><div class="accent-picker" id="accentPicker"></div></div></div>';
   html+='<div class="section-header">Data</div><div class="settings-group"><div class="settings-row" onclick="exportData()"><span class="sr-label">Export All Data</span><span class="sr-value">JSON ›</span></div><div class="settings-row" onclick="document.getElementById(\'importInput\').click()"><span class="sr-label">Import Data</span><span class="sr-value">JSON ›</span></div>'+(hasModified?'<div class="settings-row" onclick="resetDefaults()"><span class="sr-label">Reset Default Workouts</span><span class="sr-value">›</span></div>':'')+'<div class="settings-row" onclick="clearAllData()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Clear All Data</span><span class="sr-value" style="color:var(--red)">›</span></div></div><input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">';
-  html+='<div class="section-header">About</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">ULUL Tracker</span><span class="sr-value">v1.5</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Protocol</span><span class="sr-value">2 sets to failure</span></div></div>';
+  html+='<div class="section-header">About</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">ULUL Tracker</span><span class="sr-value">v2.0</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Protocol</span><span class="sr-value">2 sets to failure</span></div></div>';
   html+='<div style="text-align:center;padding:24px;color:var(--text-tertiary);font-size:12px">'+(fbUser?'Data synced to Google Firebase.':'Data stored locally on this device.')+'</div>';
   container.innerHTML=html;
 }
@@ -1231,7 +1289,7 @@ function adjustRestSetting(d){var s=document.getElementById('restSettingSlider')
 function updateRestSettingFromSlider(v){document.getElementById('restSettingDisplay').textContent=v+'s';}
 function saveRestSetting(){setRestDuration(parseInt(document.getElementById('restSettingSlider').value));closeModal();renderSettings();showToast('Rest timer updated');}
 function exportData(){
-  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),exportDate:new Date().toISOString(),version:'1.5'};
+  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),exportDate:new Date().toISOString(),version:'2.0'};
   var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ulul-backup-'+new Date().toISOString().split('T')[0]+'.json';a.click();URL.revokeObjectURL(url);showToast('Data exported');
 }
 function importData(event){
@@ -1248,7 +1306,7 @@ function clearAllData(){showConfirm('Clear All Data?','This permanently deletes 
 })();
 (function(){
   if('serviceWorker' in navigator){
-    var sw="var C='ulul-tracker-v2';self.addEventListener('install',function(e){self.skipWaiting()});self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(k){return Promise.all(k.filter(function(n){return n!==C}).map(function(n){return caches.delete(n)}))}).then(function(){return clients.claim()}))});self.addEventListener('fetch',function(e){e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request).then(function(f){if(e.request.method==='GET'&&f.status===200){var c=f.clone();caches.open(C).then(function(ca){ca.put(e.request,c)})}return f}).catch(function(){return new Response('<h1>Offline</h1>',{headers:{'Content-Type':'text/html'}})})}))})";
+    var sw="var C='ulul-tracker-v3';self.addEventListener('install',function(e){self.skipWaiting()});self.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(k){return Promise.all(k.filter(function(n){return n!==C}).map(function(n){return caches.delete(n)}))}).then(function(){return clients.claim()}))});self.addEventListener('fetch',function(e){e.respondWith(caches.match(e.request).then(function(r){return r||fetch(e.request).then(function(f){if(e.request.method==='GET'&&f.status===200){var c=f.clone();caches.open(C).then(function(ca){ca.put(e.request,c)})}return f}).catch(function(){return new Response('<h1>Offline</h1>',{headers:{'Content-Type':'text/html'}})})}))})";
     navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw],{type:'application/javascript'}))).catch(function(){});
   }
 })();
@@ -1354,11 +1412,37 @@ function calPrev(){calMonth--;if(calMonth<0){calMonth=11;calYear--;}calSelectedD
 function calNext(){calMonth++;if(calMonth>11){calMonth=0;calYear++;}calSelectedDate=null;renderCalendar();}
 function calSelectDay(dateStr){calSelectedDate=calSelectedDate===dateStr?null:dateStr;renderCalendar();}
 
+/* ACCENT COLORS */
+var ACCENT_COLORS=[
+  {name:'Blue',value:'#0a84ff'},{name:'Purple',value:'#5e5ce6'},{name:'Green',value:'#30d158'},
+  {name:'Red',value:'#ff453a'},{name:'Orange',value:'#ff9f0a'},{name:'Pink',value:'#ff375f'},
+  {name:'Teal',value:'#64d2ff'},{name:'Yellow',value:'#ffd60a'}
+];
+function getAccentColor(){return localStorage.getItem(NS+'accent_color')||'#0a84ff';}
+function setAccentColor(c){
+  localStorage.setItem(NS+'accent_color',c);
+  document.documentElement.style.setProperty('--accent',c);
+  var r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16);
+  document.documentElement.style.setProperty('--accent-dim','rgba('+r+','+g+','+b+',0.15)');
+}
+function applyAccent(){var c=getAccentColor();if(c!=='#0a84ff')setAccentColor(c);}
+function renderAccentPicker(){
+  var el=document.getElementById('accentPicker');if(!el)return;
+  var cur=getAccentColor();
+  el.innerHTML=ACCENT_COLORS.map(function(c){return '<div class="accent-swatch '+(c.value===cur?'active':'')+'" style="background:'+c.value+'" onclick="setAccentColor(\''+c.value+'\');renderSettings()" title="'+c.name+'"></div>';}).join('');
+}
+
 /* INIT */
 (function(){
   applyOled();
+  applyAccent();
   restoreSession();
   renderToday();
+  updateSessionFloat();
+  // Render accent picker after settings loads
+  var _origRenderSettings=renderSettings;
+  var _patchedRender=function(){_origRenderSettings();renderAccentPicker();};
+  renderSettings=_patchedRender;
 })();
 </script>
 </body>
