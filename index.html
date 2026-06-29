@@ -518,15 +518,34 @@ function applyOled(){if(getOledMode())document.body.classList.add('oled');else d
 
 /* SESSION PERSISTENCE: survives app kills, tab reloads, Safari purges */
 function persistSession(){
-  if(activeSession){saveJSON(KEYS.activeSession,activeSession);}
-  else{localStorage.removeItem(KEYS.activeSession);}
+  if(activeSession){activeSession._lastActivity=new Date().toISOString();saveJSON(KEYS.activeSession,activeSession);resetIdleTimer();}
+  else{localStorage.removeItem(KEYS.activeSession);clearTimeout(_idleTimer);}
   fbAutoSync();
 }
+
+function resetIdleTimer(){
+  clearTimeout(_idleTimer);
+  _idleTimer=setTimeout(function(){
+    if(!activeSession)return;
+    showToast('Session idle for 1 hour — auto-saving');
+    saveSession();
+  },IDLE_TIMEOUT_MS);
+}
+
+function cancelIdleTimer(){clearTimeout(_idleTimer);_idleTimer=null;}
 function restoreSession(){
   var saved=loadJSON(KEYS.activeSession,null);
   if(saved&&saved.workoutId&&saved.exercises&&saved.exercises.length>0){
     activeSession=saved;
     startSessionTimer();
+    // Auto-complete if session was idle for over an hour since last persist
+    var lastActivity=saved._lastActivity||saved.startTime;
+    var idleMs=Date.now()-new Date(lastActivity).getTime();
+    if(idleMs>=IDLE_TIMEOUT_MS){
+      setTimeout(function(){if(activeSession){showToast('Session was idle for over an hour — auto-saving');saveSession();}},500);
+    } else {
+      resetIdleTimer();
+    }
     return true;
   }
   return false;
@@ -589,18 +608,29 @@ function fbAutoSync(){
 
 function fbSignIn(){
   var provider=new firebase.auth.GoogleAuthProvider();
-  return fbAuth.signInWithPopup(provider);
+  return fbAuth.signInWithPopup(provider).catch(function(err){
+    if(err.code==='auth/popup-blocked'||err.code==='auth/popup-closed-by-user'||err.code==='auth/cancelled-popup-request'){
+      return fbAuth.signInWithRedirect(provider);
+    }
+    return Promise.reject(err);
+  });
 }
 
 function fbSignOut(){
   return fbAuth.signOut();
 }
 
+// Handle redirect result (iOS Safari PWA sign-in)
+fbAuth.getRedirectResult().then(function(result){
+  if(result&&result.user){showToast('Signed in as '+result.user.displayName);}
+}).catch(function(err){if(err.code&&err.code!=='auth/no-current-user')showToast('Sign-in error: '+err.message);});
+
 // Listen for auth state changes
 fbAuth.onAuthStateChanged(function(user){
   fbUser=user;
   if(currentTab==='settings')renderSettings();
   if(user){
+    var localData=getAllDataForSync();
     var localSessions=getSessions();
     if(localSessions.length===0){
       fbPull().then(function(data){
@@ -611,7 +641,25 @@ fbAuth.onAuthStateChanged(function(user){
         }
       });
     } else {
-      fbPush();
+      // Compare timestamps: push only if local is newer or cloud has no data
+      fbPull().then(function(cloudData){
+        if(!cloudData||!cloudData.syncDate){
+          fbPush();
+        } else {
+          var localDate=new Date(localData.syncDate||0);
+          var cloudDate=new Date(cloudData.syncDate||0);
+          if(localDate>=cloudDate){
+            fbPush();
+          } else if(cloudData.sessions&&cloudData.sessions.length>localSessions.length){
+            showConfirm('Newer cloud data found','Your cloud has more sessions than your device. Restore from cloud?',function(){
+              restoreAllData(cloudData);restoreSession();showToast('Restored from cloud!');
+              if(currentTab==='today')renderToday();
+            },'Restore');
+          } else {
+            fbPush();
+          }
+        }
+      });
     }
   }
 });
@@ -625,6 +673,8 @@ let restTimerRemaining=0;
 let sessionTimerInterval=null;
 let workoutSelectMode=false;
 let workoutSelected=new Set();
+var _idleTimer=null;
+var IDLE_TIMEOUT_MS=60*60*1000; // 1 hour
 
 /* UTILITY */
 function $(sel){return document.querySelector(sel);}
@@ -929,13 +979,13 @@ function beginSession(wid,version){
       var flagKey=w.id+'::'+ex.name;var flag=flags[flagKey]||null;
       var prev=getPreviousExerciseData(ex.name,w.id);
       return{id:generateId(),name:ex.name,targetReps:ex.reps,targetSets:ex.sets||2,
-        notes:'',flagUp:false,flagDown:false,prevFlag:flag,
+        notes:'',flagUp:flag==='up',flagDown:flag==='down',prevFlag:flag,
         sets:Array.from({length:ex.sets||2},function(_,i){
           var ps=prev&&prev.sets&&prev.sets[i]?prev.sets[i]:null;
           return{weight:ps?ps.weight:'',reps:'',rir:i===0?1:0,failure:i===1,completed:false,_autofilled:!!ps};
         })};
     })};
-  startSessionTimer();persistSession();renderActiveSession();
+  startSessionTimer();persistSession();resetIdleTimer();renderActiveSession();
   // Request notification permission for rest timer alerts
   if(Notification&&Notification.permission==='default'){Notification.requestPermission();}
 }
@@ -1017,11 +1067,11 @@ function saveSession(){
   var session={id:generateId(),workoutId:activeSession.workoutId,workoutName:activeSession.workoutName,version:activeSession.version,date:new Date().toISOString(),startTime:activeSession.startTime,
     exercises:activeSession.exercises.map(function(ex){return{name:ex.name,notes:ex.notes||'',flagUp:ex.flagUp,flagDown:ex.flagDown,sets:ex.sets.map(function(s){return{weight:s.weight,reps:s.reps,rir:s.rir,failure:s.failure,completed:s.completed};})};})};
   var sessions=getSessions();sessions.push(session);saveSessions(sessions);setLastWorkout(activeSession.workoutId);
-  activeSession=null;clearPersistedSession();if(navigator.vibrate)navigator.vibrate([50,30,50]);showToast('Session saved!');
+  activeSession=null;clearPersistedSession();cancelIdleTimer();if(navigator.vibrate)navigator.vibrate([50,30,50]);showToast('Session saved!');
   fbPush();
   renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';
 }
-function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
+function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();cancelIdleTimer();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
 
 /* HISTORY TAB */
 function renderHistory(){
