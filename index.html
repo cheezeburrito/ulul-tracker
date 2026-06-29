@@ -755,6 +755,27 @@ function openModal(html){$('#modalContent').innerHTML=html;$('#modalOverlay').cl
 function closeModal(){$('#modalOverlay').classList.remove('visible');}
 
 /* REST TIMER */
+/* ALARM: Web Audio beep that works on iOS after any user tap */
+var _audioCtx=null;
+function _getAudioCtx(){if(!_audioCtx)_audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(_audioCtx.state==='suspended')_audioCtx.resume();return _audioCtx;}
+function playAlarm(){
+  try{
+    var ctx=_getAudioCtx();
+    // Three-beep pattern: 880Hz, 1046Hz, 1318Hz (ascending)
+    [[0,880],[0.25,1046],[0.5,1318]].forEach(function(p){
+      var o=ctx.createOscillator();var g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);
+      o.frequency.value=p[1];o.type='sine';
+      g.gain.setValueAtTime(0,ctx.currentTime+p[0]);
+      g.gain.linearRampToValueAtTime(0.5,ctx.currentTime+p[0]+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+p[0]+0.35);
+      o.start(ctx.currentTime+p[0]);o.stop(ctx.currentTime+p[0]+0.4);
+    });
+  }catch(e){}
+}
+// Unlock audio context on first tap anywhere
+document.addEventListener('touchstart',function(){try{_getAudioCtx();}catch(e){}},{once:true,passive:true});
+
 /* REST TIMER: timestamp-based so it survives app backgrounding */
 var restTimerEndTime=0;
 function startRestTimer(){
@@ -766,8 +787,8 @@ function startRestTimer(){
     if(restTimerRemaining<=0){
       // Overtime mode: show negative timer
       if(restTimerRemaining===0){
-        if(navigator.vibrate)navigator.vibrate([200,100,200]);
-        // Send push notification if app is backgrounded
+        playAlarm();
+        if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
         if(document.hidden&&Notification&&Notification.permission==='granted'){
           try{new Notification('ULUL Tracker',{body:'Rest time is up! Get back to it.',icon:'https://cheezeburrito.github.io/ulul-tracker/preview.png',tag:'rest-timer'});}catch(e){}
         }
@@ -1366,7 +1387,7 @@ function doSbLogout(){showConfirm('Sign Out?','Your cloud data stays safe. Sign 
 function doSbPush(){showToast('Syncing...');sbPush().then(function(ok){showToast(ok?'Synced to cloud!':'Sync failed — check connection');});}
 function doSbPull(){showConfirm('Restore from Cloud?','This will replace all local data with your cloud backup.',function(){sbPull().then(function(data){if(data){restoreAllData(data);restoreSession();showToast('Restored!');switchTab('today');}else{showToast('No cloud data found');}});});}
 function resetDefaults(){showConfirm('Reset Default Workouts?','This restores all 4 defaults to their original state and resets workout order.',function(){saveDeletedDefaults([]);saveEditedDefaults({});saveWorkoutOrder([]);renderSettings();showToast('Defaults restored');});}
-function openRestTimerSetting(){var c=getRestDuration();openModal('<div class="modal-title">Rest Timer</div><p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:20px">Default rest duration between sets</p><div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px"><button class="btn btn-secondary" onclick="adjustRestSetting(-15)">-15s</button><div style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;width:80px;text-align:center" id="restSettingDisplay">'+c+'s</div><button class="btn btn-secondary" onclick="adjustRestSetting(15)">+15s</button></div><input type="range" id="restSettingSlider" min="30" max="300" step="15" value="'+c+'" oninput="updateRestSettingFromSlider(this.value)" style="width:100%;margin-bottom:20px;accent-color:var(--accent)"><button class="btn btn-primary btn-block" onclick="saveRestSetting()">Save</button>');}
+function openRestTimerSetting(){var c=getRestDuration();openModal('<div class="modal-title">Rest Timer</div><p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:20px">Default rest duration between sets</p><div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px"><button class="btn btn-secondary" onclick="adjustRestSetting(-15)">-15s</button><div style="font-size:36px;font-weight:700;font-variant-numeric:tabular-nums;width:80px;text-align:center" id="restSettingDisplay">'+c+'s</div><button class="btn btn-secondary" onclick="adjustRestSetting(15)">+15s</button></div><input type="range" id="restSettingSlider" min="30" max="300" step="15" value="'+c+'" oninput="updateRestSettingFromSlider(this.value)" style="width:100%;margin-bottom:20px;accent-color:var(--accent)"><button class="btn btn-primary btn-block" onclick="saveRestSetting()">Save</button><button class="btn btn-secondary btn-block" style="margin-top:10px" onclick="playAlarm()">🔔 Test Alarm Sound</button><p style="text-align:center;font-size:12px;color:var(--text-tertiary);margin-top:10px">Sound plays through iPhone speaker when rest ends. Keep the app open.</p>');}
 function adjustRestSetting(d){var s=document.getElementById('restSettingSlider'),di=document.getElementById('restSettingDisplay');var v=parseInt(s.value)+d;v=Math.max(30,Math.min(300,v));s.value=v;di.textContent=v+'s';}
 function updateRestSettingFromSlider(v){document.getElementById('restSettingDisplay').textContent=v+'s';}
 function saveRestSetting(){setRestDuration(parseInt(document.getElementById('restSettingSlider').value));closeModal();renderSettings();showToast('Rest timer updated');}
