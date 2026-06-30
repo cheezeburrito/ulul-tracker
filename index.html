@@ -548,7 +548,22 @@ function getOledMode(){return localStorage.getItem(KEYS.oledMode)==='true';}
 function setOledMode(v){localStorage.setItem(KEYS.oledMode,v?'true':'false');applyOled();}
 function applyOled(){if(getOledMode())document.body.classList.add('oled');else document.body.classList.remove('oled');}
 function getUnits(){return localStorage.getItem(KEYS.units)||'lbs';}
-function setUnits(u){localStorage.setItem(KEYS.units,u);}
+function setUnits(u){
+  var old=getUnits();
+  localStorage.setItem(KEYS.units,u);
+  if(old!==u)convertStoredWeights(old,u);
+}
+/* Convert every stored weight when switching units so numbers stay correct (not just relabeled) */
+function convertStoredWeights(from,to){
+  var f=(from==='lbs'&&to==='kg')?(1/2.2046226):(from==='kg'&&to==='lbs')?2.2046226:1;
+  if(f===1)return;
+  function cv(v){if(v===''||v==null)return v;var n=parseFloat(v);if(isNaN(n))return v;return Math.round(n*f*10)/10;}
+  var sessions=getSessions();sessions.forEach(function(s){s.exercises.forEach(function(e){e.sets.forEach(function(st){st.weight=cv(st.weight);});});});saveSessions(sessions);
+  var bw=getBodyWeightLog();bw.forEach(function(b){b.weight=cv(b.weight);});saveBodyWeightLog(bw);
+  var bar=localStorage.getItem(NS+'bar_weight');if(bar)localStorage.setItem(NS+'bar_weight',cv(bar));
+  if(typeof activeSession!=='undefined'&&activeSession){activeSession.exercises.forEach(function(e){e.sets.forEach(function(st){st.weight=cv(st.weight);});});persistSession();}
+  if(typeof sbAutoSync==='function')sbAutoSync();
+}
 function wtLabel(){return getUnits();}
 
 /* 1RM ESTIMATE (Epley formula) */
@@ -680,25 +695,43 @@ function sbLogout(){
   if(token)sbRpc('gym_logout',{p_token:token}).catch(function(){});
 }
 
+/* MERGE: union local + cloud so multi-device use never loses data */
+function _mergeById(a,b){var m={};(a||[]).forEach(function(x){if(x&&x.id)m[x.id]=x;});(b||[]).forEach(function(x){if(x&&x.id)m[x.id]=x;});return Object.keys(m).map(function(k){return m[k];});}
+function _mergeSessions(a,b){var arr=_mergeById(a,b);arr.sort(function(x,y){return new Date(x.date)-new Date(y.date);});return arr;}
+function _mergeBodyWeight(a,b){var m={};(a||[]).concat(b||[]).forEach(function(e){if(e&&e.date)m[e.date+'|'+e.weight]=e;});var arr=Object.keys(m).map(function(k){return m[k];});arr.sort(function(x,y){return new Date(x.date)-new Date(y.date);});return arr;}
+function _unionArr(a,b){var s={};(a||[]).concat(b||[]).forEach(function(x){s[x]=1;});return Object.keys(s);}
+function mergeAllData(local,cloud){
+  var newer=(new Date(cloud.syncDate||0)>new Date(local.syncDate||0))?cloud:local;
+  return{
+    sessions:_mergeSessions(local.sessions,cloud.sessions),
+    customWorkouts:_mergeById(local.customWorkouts,cloud.customWorkouts),
+    bodyWeight:_mergeBodyWeight(local.bodyWeight,cloud.bodyWeight),
+    flags:Object.assign({},local.flags,cloud.flags),
+    restDuration:newer.restDuration||local.restDuration,
+    lastWorkout:newer.lastWorkout||local.lastWorkout,
+    deletedDefaults:_unionArr(local.deletedDefaults,cloud.deletedDefaults),
+    editedDefaults:Object.assign({},local.editedDefaults,newer.editedDefaults),
+    workoutOrder:(newer.workoutOrder&&newer.workoutOrder.length)?newer.workoutOrder:(local.workoutOrder||cloud.workoutOrder||[]),
+    activeSession:local.activeSession||cloud.activeSession||null,
+    syncDate:new Date().toISOString(),version:'2.0'
+  };
+}
 function sbInit(){
   var token=getSbToken(),username=getSbUsername();
   if(!token||!username){return Promise.resolve(false);}
   sbUser={token:token,username:username};
   return sbPull().then(function(cloudData){
     if(!cloudData){sbLogout();return false;}
-    var localSessions=getSessions();
-    if(localSessions.length===0&&cloudData.sessions&&cloudData.sessions.length>0){
-      restoreAllData(cloudData);restoreSession();showToast('Data restored from cloud');
-    } else {
-      var localDate=new Date(getAllDataForSync().syncDate||0);
-      var cloudDate=new Date(cloudData.syncDate||0);
-      if(cloudDate>localDate&&cloudData.sessions&&cloudData.sessions.length>=localSessions.length){
-        showConfirm('Newer cloud data found','Your cloud has more sessions. Restore?',function(){
-          restoreAllData(cloudData);restoreSession();showToast('Restored!');if(currentTab==='today')renderToday();
-        },'Restore');
-      } else {sbPush();}
-    }
+    var local=getAllDataForSync();
+    var merged=mergeAllData(local,cloudData);
+    var gained=merged.sessions.length-(local.sessions?local.sessions.length:0);
+    restoreAllData(merged);
+    if(!activeSession)restoreSession();
+    sbPush();
+    if(gained>0)showToast('Synced — '+gained+' session'+(gained>1?'s':'')+' pulled from cloud');
     if(currentTab==='settings')renderSettings();
+    if(currentTab==='today')renderToday();
+    if(currentTab==='history')renderHistory();
     return true;
   }).catch(function(){sbLogout();return false;});
 }
@@ -1208,9 +1241,17 @@ function toggleComplete(ei,si){
     if((s.reps===''||s.reps==null)&&prevSet&&prevSet.reps)s.reps=prevSet.reps;
     s._autofilled=false;
     if(navigator.vibrate)navigator.vibrate(30);
+    // Celebrate genuine PR (beating an existing record), not every first-ever set
+    if(s.weight&&!s.warmup&&!s._celebrated){var _prs=getAllPRs();if(_prs[ex.name]&&parseFloat(s.weight)>_prs[ex.name].weight){s._celebrated=true;setTimeout(function(){showPRCelebration(ex.name);},150);}}
     startRestTimer();
   }
   persistSession();renderActiveSession();
+}
+function showPRCelebration(name){
+  showToast('🏆 New PR — '+name+'!');
+  var f=document.getElementById('screenFlash');
+  if(f){f.style.background='#ffd60a';f.classList.remove('flashing');void f.offsetWidth;f.classList.add('flashing');setTimeout(function(){f.classList.remove('flashing');f.style.background='';},1500);}
+  if(navigator.vibrate)navigator.vibrate([60,40,60,40,120]);
 }
 function addSet(ei){if(!activeSession)return;activeSession.exercises[ei].sets.push({weight:'',reps:'',rir:1,failure:false,completed:false,_autofilled:false});persistSession();renderActiveSession();}
 function removeSet(ei){if(!activeSession)return;if(activeSession.exercises[ei].sets.length>1){activeSession.exercises[ei].sets.pop();persistSession();renderActiveSession();}}
@@ -1456,6 +1497,7 @@ function filterHistory(){
       if(ex.notes)html+='<div class="hist-notes">'+escapeHtml(ex.notes)+'</div>';
       html+='</div>';
     });
+    html+='<button class="hist-resume-btn" style="margin-left:0" onclick="editHistorySession(\''+s.id+'\')">Edit</button>';
     html+='<button class="hist-delete-btn" onclick="deleteSession(\''+s.id+'\')">Delete Session</button>';
     html+='</div></div>';
   });
@@ -1465,6 +1507,45 @@ function filterHistory(){
   });
 }
 function toggleHistSession(id){var el=document.getElementById('hist-'+id);if(el)el.classList.toggle('expanded');}
+
+/* EDIT PAST SESSION */
+var _histEdit=null;
+function editHistorySession(id){
+  var s=getSessions().find(function(x){return x.id===id;});if(!s)return;
+  _histEdit=JSON.parse(JSON.stringify(s));
+  renderHistEditor();
+}
+function renderHistEditor(){
+  var s=_histEdit;if(!s)return;
+  var html='<div class="modal-title">Edit Session</div>';
+  html+='<div style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:14px">'+escapeHtml(s.workoutName)+' · '+formatDate(s.date)+'</div>';
+  s.exercises.forEach(function(ex,ei){
+    html+='<div style="background:var(--bg-elevated);border-radius:var(--radius-md);padding:12px;margin-bottom:10px">';
+    html+='<div style="font-weight:600;font-size:14px;margin-bottom:8px">'+escapeHtml(ex.name)+'</div>';
+    html+='<div style="display:grid;grid-template-columns:24px 1fr 1fr 44px 28px;gap:6px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:4px"><div></div><div>Weight</div><div>Reps</div><div>RIR</div><div>✓</div></div>';
+    ex.sets.forEach(function(st,si){
+      html+='<div style="display:grid;grid-template-columns:24px 1fr 1fr 44px 28px;gap:6px;align-items:center;margin-bottom:6px">';
+      html+='<div style="font-size:12px;text-align:center;color:'+(st.warmup?'var(--orange)':'var(--text-tertiary)')+'">'+(st.warmup?'W':(si+1))+'</div>';
+      html+='<input type="number" class="set-input" value="'+(st.weight!=null?st.weight:'')+'" placeholder="'+wtLabel()+'" inputmode="decimal" oninput="histEditSet('+ei+','+si+',\'weight\',this.value)">';
+      html+='<input type="number" class="set-input" value="'+(st.reps!=null?st.reps:'')+'" placeholder="reps" inputmode="numeric" oninput="histEditSet('+ei+','+si+',\'reps\',this.value)">';
+      html+='<button class="rir-btn rir-'+Math.min(st.rir||0,4)+'" onclick="histEditRir('+ei+','+si+')">'+((st.rir>=4)?'4+':(st.rir||0))+'</button>';
+      html+='<button class="done-check '+(st.completed?'checked':'')+'" onclick="histEditToggle('+ei+','+si+')">'+(st.completed?'✓':'')+'</button>';
+      html+='</div>';
+    });
+    html+='</div>';
+  });
+  html+='<div style="display:flex;gap:10px;margin-top:12px"><button class="btn btn-secondary btn-block" onclick="closeModal();_histEdit=null">Cancel</button><button class="btn btn-primary btn-block" onclick="saveHistEdit()">Save Changes</button></div>';
+  openModal(html);
+}
+function histEditSet(ei,si,f,v){if(!_histEdit)return;if(f==='weight'||f==='reps'){var n=parseFloat(v);if(v!==''&&(isNaN(n)||n<0))return;v=(v===''?'':n);}_histEdit.exercises[ei].sets[si][f]=v;}
+function histEditRir(ei,si){if(!_histEdit)return;var st=_histEdit.exercises[ei].sets[si];st.rir=((st.rir||0)+1)%5;renderHistEditor();}
+function histEditToggle(ei,si){if(!_histEdit)return;var st=_histEdit.exercises[ei].sets[si];st.completed=!st.completed;renderHistEditor();}
+function saveHistEdit(){
+  if(!_histEdit)return;
+  var sessions=getSessions();var idx=-1;for(var i=0;i<sessions.length;i++){if(sessions[i].id===_histEdit.id){idx=i;break;}}
+  if(idx>=0){sessions[idx]=_histEdit;saveSessions(sessions);if(typeof sbAutoSync==='function')sbAutoSync();}
+  _histEdit=null;closeModal();renderHistory();showToast('Session updated');
+}
 function deleteSession(id){showConfirm('Delete Session?','This cannot be undone.',function(){saveSessions(getSessions().filter(function(s){return s.id!==id;}));renderHistory();showToast('Session deleted');},'Delete',true);}
 
 /* WORKOUTS TAB: multi-delete + editable defaults */
@@ -1591,6 +1672,7 @@ function renderSettings(){
 }
 
 /* SUPABASE UI HANDLERS */
+function _sbSchemaErr(err){var m=((err&&err.message)||'').toString();return /PGRST202|find the function|does not exist|schema cache|relation|404/i.test(m);}
 function doSbLogin(){
   var u=(document.getElementById('sbUsernameInput')||{}).value||'';
   var p=(document.getElementById('sbPasswordInput')||{}).value||'';
@@ -1598,8 +1680,11 @@ function doSbLogin(){
   showToast('Signing in...');
   sbLogin(u.trim(),p).then(function(){
     showToast('Welcome back, '+sbUser.username+'!');
-    sbPull().then(function(data){if(data&&data.sessions&&data.sessions.length>0){restoreAllData(data);restoreSession();}sbPush();renderSettings();if(currentTab==='today')renderToday();});
-  }).catch(function(err){showToast('Error: '+(err.message||'Invalid credentials'));});
+    sbPull().then(function(data){
+      if(data){var merged=mergeAllData(getAllDataForSync(),data);restoreAllData(merged);if(!activeSession)restoreSession();}
+      sbPush();renderSettings();if(currentTab==='today')renderToday();if(currentTab==='history')renderHistory();
+    });
+  }).catch(function(err){showToast(_sbSchemaErr(err)?'Cloud not set up — run the setup SQL in Supabase':'Error: '+(err.message||'Invalid credentials'));});
 }
 function doSbRegister(){
   var u=(document.getElementById('sbUsernameInput')||{}).value||'';
@@ -1613,7 +1698,7 @@ function doSbRegister(){
     sbPush();renderSettings();
   }).catch(function(err){
     var msg=err.message||'';
-    showToast(msg.includes('username_taken')?'Username already taken':('Error: '+msg));
+    showToast(_sbSchemaErr(err)?'Cloud not set up — run the setup SQL in Supabase':(msg.includes('username_taken')?'Username already taken':('Error: '+msg)));
   });
 }
 function doSbLogout(){showConfirm('Sign Out?','Your cloud data stays safe. Sign back in anytime to restore.',function(){sbLogout();showToast('Signed out');renderSettings();});}
@@ -1637,7 +1722,7 @@ function clearAllData(){showConfirm('Clear All Data?','This permanently deletes 
 
 /* PWA */
 (function(){
-  var m={name:'ULUL Tracker',short_name:'ULUL',description:'ULUL split tracker',start_url:'./',display:'standalone',background_color:'#000000',theme_color:'#000000',icons:[{src:'https://cheezeburrito.github.io/ulul-tracker/preview.png',sizes:'512x512',type:'image/png',purpose:'any'}]};
+  var m={name:'ULUL Tracker',short_name:'ULUL',description:'ULUL split tracker',start_url:'./',display:'standalone',background_color:'#000000',theme_color:'#000000',icons:[{src:'https://cheezeburrito.github.io/ulul-tracker/icon.png',sizes:'512x512',type:'image/png',purpose:'any maskable'}]};
   var b=new Blob([JSON.stringify(m)],{type:'application/json'});var l=document.createElement('link');l.rel='manifest';l.href=URL.createObjectURL(b);document.head.appendChild(l);
 })();
 (function(){
