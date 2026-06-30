@@ -1313,13 +1313,15 @@ function renderActiveSession(){
     else if(bestRm>0){html+='<div class="ex-prev">Best e1RM today: <span>'+bestRm+' '+wtLabel()+'</span></div>';}
     var _hint=getOverloadHint(ex.name,activeSession.workoutId);if(_hint)html+='<div class="ex-hint">🎯 '+_hint+'</div>';
     html+='<div class="set-table"><div class="set-row-header"><div>Set</div><div>Weight</div><div>Reps</div><div>RIR</div><div style="text-align:center">F</div><div style="text-align:center">✓</div></div>';
+    var _wn=0;
     ex.sets.forEach(function(set,setIdx){
+      if(!set.warmup)_wn++;
       var rc='rir-'+Math.min(set.rir,4);var rl=set.rir>=4?'4+':set.rir.toString();
       var af=set._autofilled&&set.weight&&!set.completed?'autofilled':'';
       var prevSet=prev&&prev.sets&&prev.sets[setIdx]?prev.sets[setIdx]:null;
       var wPh=prevSet&&prevSet.weight?prevSet.weight:wtLabel();
       var rPh=prevSet&&prevSet.reps?prevSet.reps:ex.targetReps;
-      html+='<div class="set-row '+(set.completed?'completed':'')+'" id="set-'+exIdx+'-'+setIdx+'"><button class="set-num set-num-btn'+(set.warmup?' warmup':'')+'" onclick="toggleWarmup('+exIdx+','+setIdx+')" title="Tap to toggle warmup">'+(set.warmup?'W':(setIdx+1))+'</button><input type="number" class="set-input '+af+'" value="'+set.weight+'" placeholder="'+wPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="weight" onchange="updateSet('+exIdx+','+setIdx+',\'weight\',this.value)" onfocus="clearAutofill(this);onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="decimal"><input type="number" class="set-input" value="'+set.reps+'" placeholder="'+rPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="reps" onchange="updateSet('+exIdx+','+setIdx+',\'reps\',this.value)" onfocus="onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="numeric"><button class="rir-btn '+rc+'" onclick="cycleRIR('+exIdx+','+setIdx+')">'+rl+'</button><button class="fail-check '+(set.failure?'checked':'')+'" onclick="toggleFailure('+exIdx+','+setIdx+')">'+(set.failure?'✕':'')+'</button><button class="done-check '+(set.completed?'checked':'')+'" onclick="toggleComplete('+exIdx+','+setIdx+')">'+(set.completed?'✓':'')+'</button></div>';
+      html+='<div class="set-row '+(set.completed?'completed':'')+'" id="set-'+exIdx+'-'+setIdx+'"><button class="set-num set-num-btn'+(set.warmup?' warmup':'')+'" onclick="toggleWarmup('+exIdx+','+setIdx+')" title="Tap to toggle warmup">'+(set.warmup?'W':_wn)+'</button><input type="number" class="set-input '+af+'" value="'+set.weight+'" placeholder="'+wPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="weight" onchange="updateSet('+exIdx+','+setIdx+',\'weight\',this.value)" onfocus="clearAutofill(this);onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="decimal"><input type="number" class="set-input" value="'+set.reps+'" placeholder="'+rPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="reps" onchange="updateSet('+exIdx+','+setIdx+',\'reps\',this.value)" onfocus="onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="numeric"><button class="rir-btn '+rc+'" onclick="cycleRIR('+exIdx+','+setIdx+')">'+rl+'</button><button class="fail-check '+(set.failure?'checked':'')+'" onclick="toggleFailure('+exIdx+','+setIdx+')">'+(set.failure?'✕':'')+'</button><button class="done-check '+(set.completed?'checked':'')+'" onclick="toggleComplete('+exIdx+','+setIdx+')">'+(set.completed?'✓':'')+'</button></div>';
     });
     html+='</div>';
     html+='<div class="ex-footer"><button class="ex-footer-btn btn-add-set" onclick="addSet('+exIdx+')">+ Set</button>'+(ex.sets.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="removeSet('+exIdx+')">- Set</button>':'')+'<button class="ex-footer-btn btn-add-set" onclick="addWarmupSets('+exIdx+')" title="Add warm-up ramp">🔥 Warm-up</button><button class="ex-footer-btn btn-flag-up '+(ex.flagUp?'active':'')+'" onclick="toggleFlag('+exIdx+',\'up\')">▲ Up</button><button class="ex-footer-btn btn-flag-down '+(ex.flagDown?'active':'')+'" onclick="toggleFlag('+exIdx+',\'down\')">▼ Down</button><button class="ex-footer-btn btn-notes-toggle" onclick="toggleNotes('+exIdx+')">📝</button>'+(activeSession.exercises.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="deleteExercise('+exIdx+')" style="margin-left:auto;background:var(--red-dim);color:var(--red)">✕ Remove</button>':'')+'</div><div class="ex-notes-area '+(ex.showNotes?'visible':'')+'" id="notes-area-'+exIdx+'"><textarea placeholder="Notes..." onchange="updateNotes('+exIdx+',this.value)">'+(ex.notes||'')+'</textarea></div>';
@@ -1632,12 +1634,14 @@ function filterHistory(){
       // Set grid
       html+='<div class="hist-set-grid">';
       html+='<div class="hist-set-grid-header"></div><div class="hist-set-grid-header">Weight</div><div class="hist-set-grid-header">Reps</div><div class="hist-set-grid-header">RIR</div><div class="hist-set-grid-header"></div>';
+      var _hwn=0;
       ex.sets.forEach(function(set,i){
+        if(!set.warmup)_hwn++;
         var incClass=set.completed?'':'incomplete';
         var numClass=set.completed?'completed':'';
         var rirVal=set.rir>=4?'4+':set.rir;
         var rirClass='hist-rir-'+Math.min(set.rir,4);
-        html+='<div class="hist-set-num '+numClass+'"'+(set.warmup?' style="color:var(--orange)"':'')+'>'+(set.warmup?'W':(i+1))+'</div>';
+        html+='<div class="hist-set-num '+numClass+'"'+(set.warmup?' style="color:var(--orange)"':'')+'>'+(set.warmup?'W':_hwn)+'</div>';
         html+='<div class="hist-set-val '+incClass+'">'+(set.weight||'-')+' '+wtLabel()+'</div>';
         html+='<div class="hist-set-val '+incClass+'">'+(set.reps||'-')+' reps</div>';
         html+='<div class="hist-rir-chip '+rirClass+'">'+rirVal+'</div>';
@@ -1674,9 +1678,11 @@ function renderHistEditor(){
     html+='<div style="background:var(--bg-elevated);border-radius:var(--radius-md);padding:12px;margin-bottom:10px">';
     html+='<div style="font-weight:600;font-size:14px;margin-bottom:8px">'+escapeHtml(ex.name)+'</div>';
     html+='<div style="display:grid;grid-template-columns:24px 1fr 1fr 44px 28px;gap:6px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:4px"><div></div><div>Weight</div><div>Reps</div><div>RIR</div><div>✓</div></div>';
+    var _ewn=0;
     ex.sets.forEach(function(st,si){
+      if(!st.warmup)_ewn++;
       html+='<div style="display:grid;grid-template-columns:24px 1fr 1fr 44px 28px;gap:6px;align-items:center;margin-bottom:6px">';
-      html+='<div style="font-size:12px;text-align:center;color:'+(st.warmup?'var(--orange)':'var(--text-tertiary)')+'">'+(st.warmup?'W':(si+1))+'</div>';
+      html+='<div style="font-size:12px;text-align:center;color:'+(st.warmup?'var(--orange)':'var(--text-tertiary)')+'">'+(st.warmup?'W':_ewn)+'</div>';
       html+='<input type="number" class="set-input" value="'+(st.weight!=null?st.weight:'')+'" placeholder="'+wtLabel()+'" inputmode="decimal" oninput="histEditSet('+ei+','+si+',\'weight\',this.value)">';
       html+='<input type="number" class="set-input" value="'+(st.reps!=null?st.reps:'')+'" placeholder="reps" inputmode="numeric" oninput="histEditSet('+ei+','+si+',\'reps\',this.value)">';
       html+='<button class="rir-btn rir-'+Math.min(st.rir||0,4)+'" onclick="histEditRir('+ei+','+si+')">'+((st.rir>=4)?'4+':(st.rir||0))+'</button>';
@@ -1969,9 +1975,12 @@ function renderCalendar(){
       html+='<div class="cal-detail-sub">'+formatTime(s.date)+(s.startTime?' &middot; Started '+formatTime(s.startTime):'')+'</div>';
       s.exercises.forEach(function(ex){
         html+='<div class="cal-detail-ex-name">'+escapeHtml(ex.name)+'</div>';
+        var _cwn=0;
         ex.sets.forEach(function(set,i){
+          if(!set.warmup)_cwn++;
           var rl=set.rir>=4?'4+':set.rir;
-          html+='<div class="cal-detail-ex">Set '+(i+1)+': '+(set.weight||'-')+' '+wtLabel()+' × '+(set.reps||'-')+', RIR '+rl+(set.failure?' ✕':'')+(set.completed?'':' (skip)')+'</div>';
+          var _lbl=set.warmup?'Warm-up':'Set '+_cwn;
+          html+='<div class="cal-detail-ex">'+_lbl+': '+(set.weight||'-')+' '+wtLabel()+' × '+(set.reps||'-')+', RIR '+rl+(set.failure?' ✕':'')+(set.completed?'':' (skip)')+'</div>';
         });
       });
       html+='</div>';
