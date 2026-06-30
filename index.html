@@ -327,6 +327,12 @@ textarea { resize: vertical; min-height: 60px; }
 .hist-ex-tap:active { opacity:0.6; }
 .plate-vis { display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;padding:20px 12px;background:var(--bg-elevated);border-radius:var(--radius-md);margin-bottom:14px;min-height:60px; }
 .plate-chip { display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;border-radius:5px;min-width:34px;padding:14px 7px;box-shadow:0 1px 3px rgba(0,0,0,0.4);font-variant-numeric:tabular-nums; }
+.muscle-row { display:flex;align-items:center;gap:10px;margin-bottom:8px; }
+.muscle-row:last-child { margin-bottom:0; }
+.muscle-name { font-size:12px;font-weight:600;color:var(--text-secondary);width:84px;flex-shrink:0; }
+.muscle-bar-track { flex:1;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden; }
+.muscle-bar { height:100%;background:var(--accent);border-radius:4px;transition:width 0.3s; }
+.muscle-count { font-size:12px;font-weight:700;color:var(--text-primary);width:24px;text-align:right;font-variant-numeric:tabular-nums; }
 .set-num-btn { background:none;border:none;font-family:inherit;cursor:pointer;padding:0; }
 .set-num.warmup { color:var(--orange); }
 .ex-hint { padding:0 16px 8px;font-size:12px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:4px; }
@@ -536,6 +542,38 @@ function saveCustomWorkouts(w){saveJSON(KEYS.customWorkouts,w);}
 function getFlags(){return loadJSON(KEYS.flags,{});}
 function saveFlags(f){saveJSON(KEYS.flags,f);}
 function getRestDuration(){return parseInt(localStorage.getItem(KEYS.restDuration))||90;}
+function getRestAuto(){return localStorage.getItem(NS+'rest_auto')!=='false';}
+function setRestAuto(v){localStorage.setItem(NS+'rest_auto',v?'true':'false');}
+
+/* MUSCLE GROUPS: map exercises -> muscle for weekly volume breakdown */
+var MUSCLE_MAP={'Flat Bench Press':'Chest','Incline Bench Press':'Chest','Dumbbell Bench Press':'Chest','Incline DB Press':'Chest','Hammer Strength Chest Press':'Chest','Cable Fly Low to High':'Chest','Pec Deck':'Chest','Lat Pulldown':'Back','Seated Cable Row':'Back','Low Row Machine':'Back','Pendlay Row':'Back','Barbell Row':'Back','Adjustable Seated Row (wide grip)':'Back','T-Bar Row':'Back','Pull-Up':'Back','Chin-Up':'Back','Cable Lateral Raise':'Shoulders','Lean-away Cable Lateral Raise':'Shoulders','DB Lateral Raise':'Shoulders','Reverse Pec Deck':'Shoulders','Face Pull':'Shoulders','Rear Delt Fly':'Shoulders','Rope Pushdown':'Triceps','Overhead Cable Tricep Extension':'Triceps','Overhead DB Extension':'Triceps','Skull Crushers':'Triceps','Close Grip Bench Press':'Triceps','Dips':'Triceps','Standing Preacher Curl Machine':'Biceps','Incline DB Curl':'Biceps','Cable Curl':'Biceps','Barbell Curl':'Biceps','Hammer Curl':'Biceps','EZ Bar Curl':'Biceps','Concentration Curl':'Biceps','Incline DB Curl / Cable Curl':'Biceps','Pendulum Squat':'Quads','Barbell Squat':'Quads','Hack Squat':'Quads','Goblet Squat':'Quads','Leg Press':'Quads','Single Leg Press':'Quads','Leg Extension':'Quads','Leg Curl':'Hamstrings','Single Leg Curl':'Hamstrings','RDL':'Hamstrings','Hip Thrust':'Glutes','Back Extension Machine (loaded)':'Glutes','Adductor Machine':'Glutes','Abductor Machine':'Glutes','Standing Calf Raise':'Calves','Seated Calf Raise':'Calves','Cable Crunch':'Core','Plank':'Core','Hanging Leg Raise':'Core','Ab Wheel':'Core'};
+function getMuscleGroup(name){
+  if(MUSCLE_MAP[name])return MUSCLE_MAP[name];
+  var n=(name||'').toLowerCase();
+  if(/leg curl|hamstring|\brdl\b|romanian|deadlift/.test(n))return 'Hamstrings';
+  if(/calf|calves/.test(n))return 'Calves';
+  if(/squat|leg press|leg extension|lunge|hack/.test(n))return 'Quads';
+  if(/hip thrust|glute|abductor|adductor/.test(n))return 'Glutes';
+  if(/crunch|plank|\bab\b|abs|core|leg raise|sit-?up/.test(n))return 'Core';
+  if(/tricep|pushdown|skull|dip|close grip/.test(n))return 'Triceps';
+  if(/curl/.test(n))return 'Biceps';
+  if(/lateral|delt|shoulder|overhead press|\bohp\b|military/.test(n))return 'Shoulders';
+  if(/\brow\b|pulldown|pull-?up|chin-?up|\blat\b/.test(n))return 'Back';
+  if(/bench|chest|fly|pec|incline|press/.test(n))return 'Chest';
+  return 'Other';
+}
+function getMuscleVolumeThisWeek(){
+  var sessions=getSessions();var now=new Date();
+  var weekStart=new Date(now);weekStart.setDate(weekStart.getDate()-weekStart.getDay());weekStart.setHours(0,0,0,0);
+  var counts={};
+  sessions.forEach(function(s){var d=new Date(s.date);if(d<weekStart)return;
+    s.exercises.forEach(function(ex){
+      var done=ex.sets.filter(function(st){return st.completed&&!st.warmup;}).length;
+      if(done<=0)return;var g=getMuscleGroup(ex.name);counts[g]=(counts[g]||0)+done;
+    });
+  });
+  return counts;
+}
 function setRestDuration(s){localStorage.setItem(KEYS.restDuration,s);}
 function getLastWorkout(){return localStorage.getItem(KEYS.lastWorkout)||null;}
 function setLastWorkout(id){localStorage.setItem(KEYS.lastWorkout,id);}
@@ -1107,6 +1145,19 @@ function renderToday(){
     html+='</div></div>';
   }
 
+  // Muscle-group volume (sets per muscle, this week)
+  var mv=getMuscleVolumeThisWeek();var mgKeys=Object.keys(mv);
+  if(mgKeys.length>0){
+    mgKeys.sort(function(a,b){return mv[b]-mv[a];});
+    var maxM=mv[mgKeys[0]]||1;
+    html+='<div class="volume-chart"><div class="volume-chart-title">Sets per Muscle (This Week)</div>';
+    mgKeys.forEach(function(g){
+      var w=Math.round((mv[g]/maxM)*100);
+      html+='<div class="muscle-row"><div class="muscle-name">'+g+'</div><div class="muscle-bar-track"><div class="muscle-bar" style="width:'+Math.max(w,4)+'%"></div></div><div class="muscle-count">'+mv[g]+'</div></div>';
+    });
+    html+='</div>';
+  }
+
   // Body weight log
   var bwLog=getBodyWeightLog();
   html+='<div class="bw-card"><div class="bw-header"><div class="bw-title">Body Weight</div></div>';
@@ -1296,7 +1347,7 @@ function toggleComplete(ei,si){
     if(s.weight&&!s.warmup&&!s._celebrated){var _prs=getAllPRs();if(_prs[ex.name]&&parseFloat(s.weight)>_prs[ex.name].weight){s._celebrated=true;_isPR=true;}}
     if(_isPR){setTimeout(function(){showPRCelebration(ex.name);},120);}
     else{confettiBurst({count:45,power:11,y:window.innerHeight*0.62});}
-    startRestTimer();
+    if(getRestAuto())startRestTimer();
   }
   persistSession();renderActiveSession();
 }
@@ -1718,7 +1769,7 @@ function renderSettings(){
     html+='<div class="sync-login"><div class="sync-login-title">Sign In to Sync</div><div class="sync-login-sub">Sign in or create an account to back up your data. You\'ll stay logged in automatically.</div><div class="sync-form"><input type="text" id="sbUsernameInput" placeholder="Username" autocomplete="username" autocapitalize="none"><input type="password" id="sbPasswordInput" placeholder="Password" autocomplete="current-password"><button class="btn btn-primary btn-block" onclick="doSbLogin()">Sign In</button><button class="btn btn-secondary btn-block" onclick="doSbRegister()">Create Account</button></div></div>';
   }
 
-  html+='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div></div>';
+  html+='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Auto-start Rest Timer</span><button class="toggle-switch '+(getRestAuto()?'on':'')+'" onclick="setRestAuto(!getRestAuto());renderSettings()"></button></div></div>';
   html+='<div class="section-header">Preferences</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">Weight Unit</span><div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid var(--border-color)"><button style="padding:6px 14px;font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:'+(getUnits()==='lbs'?'var(--accent)':'var(--bg-elevated)')+';color:'+(getUnits()==='lbs'?'#fff':'var(--text-secondary)')+'" onclick="setUnits(\'lbs\');renderSettings()">lbs</button><button style="padding:6px 14px;font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:'+(getUnits()==='kg'?'var(--accent)':'var(--bg-elevated)')+';color:'+(getUnits()==='kg'?'#fff':'var(--text-secondary)')+'" onclick="setUnits(\'kg\');renderSettings()">kg</button></div></div></div>';
   html+='<div class="section-header">Appearance</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">OLED Black Mode</span><button class="toggle-switch '+(oled?'on':'')+'" onclick="setOledMode(!getOledMode());renderSettings()"></button></div><div class="settings-row" style="cursor:default;flex-direction:column;align-items:flex-start;gap:8px"><span class="sr-label">Accent Color</span><div class="accent-picker" id="accentPicker"></div></div></div>';
   html+='<div class="section-header">Data</div><div class="settings-group"><div class="settings-row" onclick="exportData()"><span class="sr-label">Export All Data</span><span class="sr-value">JSON ›</span></div><div class="settings-row" onclick="document.getElementById(\'importInput\').click()"><span class="sr-label">Import Data</span><span class="sr-value">JSON ›</span></div>'+(hasModified?'<div class="settings-row" onclick="resetDefaults()"><span class="sr-label">Reset Default Workouts</span><span class="sr-value">›</span></div>':'')+'<div class="settings-row" onclick="clearAllData()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Clear All Data</span><span class="sr-value" style="color:var(--red)">›</span></div></div><input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">';
