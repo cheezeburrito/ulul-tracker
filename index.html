@@ -336,6 +336,10 @@ textarea { resize: vertical; min-height: 60px; }
 .set-num-btn { background:none;border:none;font-family:inherit;cursor:pointer;padding:0; }
 .set-num.warmup { color:var(--orange); }
 .ex-hint { padding:0 16px 8px;font-size:12px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:4px; }
+.ex-chevron { color:var(--text-tertiary);font-size:11px;margin-right:2px;display:inline-block;width:10px; }
+.exercise-card.collapsed .ex-header { padding-bottom:8px; }
+.exercise-card.collapsed { opacity:0.85; }
+.ex-header-left { cursor:pointer; }
 .repeat-last-btn { width:100%;background:var(--bg-card);border:0.5px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:12px;color:var(--text-primary);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px; }
 .repeat-last-btn:active { background:var(--bg-card-hover); }
 .repeat-last-btn .rl-sub { color:var(--text-secondary);font-weight:500; }
@@ -544,6 +548,8 @@ function saveFlags(f){saveJSON(KEYS.flags,f);}
 function getRestDuration(){return parseInt(localStorage.getItem(KEYS.restDuration))||90;}
 function getRestAuto(){return localStorage.getItem(NS+'rest_auto')!=='false';}
 function setRestAuto(v){localStorage.setItem(NS+'rest_auto',v?'true':'false');}
+function getRestSound(){return localStorage.getItem(NS+'rest_sound')!=='false';}
+function setRestSound(v){localStorage.setItem(NS+'rest_sound',v?'true':'false');}
 
 /* MUSCLE GROUPS: map exercises -> muscle for weekly volume breakdown */
 var MUSCLE_MAP={'Flat Bench Press':'Chest','Incline Bench Press':'Chest','Dumbbell Bench Press':'Chest','Incline DB Press':'Chest','Hammer Strength Chest Press':'Chest','Cable Fly Low to High':'Chest','Pec Deck':'Chest','Lat Pulldown':'Back','Seated Cable Row':'Back','Low Row Machine':'Back','Pendlay Row':'Back','Barbell Row':'Back','Adjustable Seated Row (wide grip)':'Back','T-Bar Row':'Back','Pull-Up':'Back','Chin-Up':'Back','Cable Lateral Raise':'Shoulders','Lean-away Cable Lateral Raise':'Shoulders','DB Lateral Raise':'Shoulders','Reverse Pec Deck':'Shoulders','Face Pull':'Shoulders','Rear Delt Fly':'Shoulders','Rope Pushdown':'Triceps','Overhead Cable Tricep Extension':'Triceps','Overhead DB Extension':'Triceps','Skull Crushers':'Triceps','Close Grip Bench Press':'Triceps','Dips':'Triceps','Standing Preacher Curl Machine':'Biceps','Incline DB Curl':'Biceps','Cable Curl':'Biceps','Barbell Curl':'Biceps','Hammer Curl':'Biceps','EZ Bar Curl':'Biceps','Concentration Curl':'Biceps','Incline DB Curl / Cable Curl':'Biceps','Pendulum Squat':'Quads','Barbell Squat':'Quads','Hack Squat':'Quads','Goblet Squat':'Quads','Leg Press':'Quads','Single Leg Press':'Quads','Leg Extension':'Quads','Leg Curl':'Hamstrings','Single Leg Curl':'Hamstrings','RDL':'Hamstrings','Hip Thrust':'Glutes','Back Extension Machine (loaded)':'Glutes','Adductor Machine':'Glutes','Abductor Machine':'Glutes','Standing Calf Raise':'Calves','Seated Calf Raise':'Calves','Cable Crunch':'Core','Plank':'Core','Hanging Leg Raise':'Core','Ab Wheel':'Core'};
@@ -995,7 +1001,7 @@ function startRestTimer(){
     if(restTimerRemaining<=0){
       // Overtime mode: show negative timer
       if(restTimerRemaining===0){
-        playAlarm();
+        if(getRestSound())playAlarm();
         flashScreen();
         if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
         if(document.hidden&&Notification&&Notification.permission==='granted'){
@@ -1278,8 +1284,15 @@ function renderActiveSession(){
     var prev=getPreviousExerciseData(ex.name,activeSession.workoutId);
     var hasPR=ex.sets.some(function(s){return s.completed&&s.weight&&isNewPR(ex.name,s.weight);});
     var topW=0,bestRm=0;ex.sets.forEach(function(s){if(s.completed&&!s.warmup){var w=parseFloat(s.weight)||0;if(w>topW)topW=w;var rm=calc1RM(s.weight,s.reps)||0;if(rm>bestRm)bestRm=rm;}});
-    html+='<div class="exercise-card '+(allDone?'all-done':'')+'">';
-    html+='<div class="ex-header"><div class="ex-header-left"><div class="ex-name">'+(ex.prevFlag==='up'?'<span class="flag-arrow flag-up">▲</span>':'')+(ex.prevFlag==='down'?'<span class="flag-arrow flag-down">▼</span>':'')+ex.name+(hasPR?'<span class="pr-badge">★ PR</span>':'')+'</div><div class="ex-rep-range">'+ex.targetSets+' × '+ex.targetReps+'</div></div><div class="ex-header-actions"><div class="reorder-btns"><button class="reorder-btn" onclick="moveExercise('+exIdx+',-1)" '+(exIdx===0?'disabled':'')+'>▲</button><button class="reorder-btn" onclick="moveExercise('+exIdx+',1)" '+(exIdx===activeSession.exercises.length-1?'disabled':'')+'>▼</button></div><button class="ex-icon-btn" onclick="showExerciseProgress(getActiveExName('+exIdx+'))" title="Progress">📈</button><button class="ex-icon-btn" onclick="showPlateCalc('+(topW||'')+')" title="Plate calculator">🏋</button><button class="ex-icon-btn" onclick="showSwapModal('+exIdx+')" title="Swap">⇄</button></div></div>';
+    var collapsed=!!ex._collapsed;
+    html+='<div class="exercise-card '+(allDone?'all-done':'')+(collapsed?' collapsed':'')+'">';
+    html+='<div class="ex-header"><div class="ex-header-left" onclick="toggleExCollapse('+exIdx+')"><div class="ex-name"><span class="ex-chevron">'+(collapsed?'▸':'▾')+'</span>'+(ex.prevFlag==='up'?'<span class="flag-arrow flag-up">▲</span>':'')+(ex.prevFlag==='down'?'<span class="flag-arrow flag-down">▼</span>':'')+ex.name+(hasPR?'<span class="pr-badge">★ PR</span>':'')+'</div><div class="ex-rep-range">'+ex.targetSets+' × '+ex.targetReps+'</div></div><div class="ex-header-actions"><div class="reorder-btns"><button class="reorder-btn" onclick="moveExercise('+exIdx+',-1)" '+(exIdx===0?'disabled':'')+'>▲</button><button class="reorder-btn" onclick="moveExercise('+exIdx+',1)" '+(exIdx===activeSession.exercises.length-1?'disabled':'')+'>▼</button></div><button class="ex-icon-btn" onclick="showExerciseProgress(getActiveExName('+exIdx+'))" title="Progress">📈</button><button class="ex-icon-btn" onclick="showPlateCalc('+(topW||'')+')" title="Plate calculator">🏋</button><button class="ex-icon-btn" onclick="showSwapModal('+exIdx+')" title="Swap">⇄</button></div></div>';
+    if(collapsed){
+      var _dc=ex.sets.filter(function(s){return s.completed;}).length;
+      var _cvol=0;ex.sets.forEach(function(s){if(s.completed&&!s.warmup)_cvol+=(parseFloat(s.weight)||0)*(parseInt(s.reps)||0);});
+      html+='<div class="ex-prev" style="cursor:pointer" onclick="toggleExCollapse('+exIdx+')"><span style="color:var(--green);font-weight:600">✓ '+_dc+'/'+ex.sets.length+' sets</span>'+(_cvol>0?' &middot; '+_cvol.toLocaleString()+' '+wtLabel():'')+'<span style="margin-left:auto;color:var(--text-tertiary)">tap to expand</span></div></div>';
+      return;
+    }
     if(prev){var ps=prev.sets.map(function(s){return(s.weight||'?')+'×'+(s.reps||'?');}).join(', ');html+='<div class="ex-prev">Last: <span>'+ps+'</span>'+(bestRm>0?'<span style="margin-left:auto;color:var(--text-secondary);font-weight:600">e1RM '+bestRm+'</span>':'')+'</div>';}
     else if(bestRm>0){html+='<div class="ex-prev">Best e1RM today: <span>'+bestRm+' '+wtLabel()+'</span></div>';}
     var _hint=getOverloadHint(ex.name,activeSession.workoutId);if(_hint)html+='<div class="ex-hint">🎯 '+_hint+'</div>';
@@ -1293,7 +1306,7 @@ function renderActiveSession(){
       html+='<div class="set-row '+(set.completed?'completed':'')+'" id="set-'+exIdx+'-'+setIdx+'"><button class="set-num set-num-btn'+(set.warmup?' warmup':'')+'" onclick="toggleWarmup('+exIdx+','+setIdx+')" title="Tap to toggle warmup">'+(set.warmup?'W':(setIdx+1))+'</button><input type="number" class="set-input '+af+'" value="'+set.weight+'" placeholder="'+wPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="weight" onchange="updateSet('+exIdx+','+setIdx+',\'weight\',this.value)" onfocus="clearAutofill(this);onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="decimal"><input type="number" class="set-input" value="'+set.reps+'" placeholder="'+rPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="reps" onchange="updateSet('+exIdx+','+setIdx+',\'reps\',this.value)" onfocus="onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="numeric"><button class="rir-btn '+rc+'" onclick="cycleRIR('+exIdx+','+setIdx+')">'+rl+'</button><button class="fail-check '+(set.failure?'checked':'')+'" onclick="toggleFailure('+exIdx+','+setIdx+')">'+(set.failure?'✕':'')+'</button><button class="done-check '+(set.completed?'checked':'')+'" onclick="toggleComplete('+exIdx+','+setIdx+')">'+(set.completed?'✓':'')+'</button></div>';
     });
     html+='</div>';
-    html+='<div class="ex-footer"><button class="ex-footer-btn btn-add-set" onclick="addSet('+exIdx+')">+ Set</button>'+(ex.sets.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="removeSet('+exIdx+')">- Set</button>':'')+'<button class="ex-footer-btn btn-flag-up '+(ex.flagUp?'active':'')+'" onclick="toggleFlag('+exIdx+',\'up\')">▲ Up</button><button class="ex-footer-btn btn-flag-down '+(ex.flagDown?'active':'')+'" onclick="toggleFlag('+exIdx+',\'down\')">▼ Down</button><button class="ex-footer-btn btn-notes-toggle" onclick="toggleNotes('+exIdx+')">📝</button>'+(activeSession.exercises.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="deleteExercise('+exIdx+')" style="margin-left:auto;background:var(--red-dim);color:var(--red)">✕ Remove</button>':'')+'</div><div class="ex-notes-area '+(ex.showNotes?'visible':'')+'" id="notes-area-'+exIdx+'"><textarea placeholder="Notes..." onchange="updateNotes('+exIdx+',this.value)">'+(ex.notes||'')+'</textarea></div>';
+    html+='<div class="ex-footer"><button class="ex-footer-btn btn-add-set" onclick="addSet('+exIdx+')">+ Set</button>'+(ex.sets.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="removeSet('+exIdx+')">- Set</button>':'')+'<button class="ex-footer-btn btn-add-set" onclick="addWarmupSets('+exIdx+')" title="Add warm-up ramp">🔥 Warm-up</button><button class="ex-footer-btn btn-flag-up '+(ex.flagUp?'active':'')+'" onclick="toggleFlag('+exIdx+',\'up\')">▲ Up</button><button class="ex-footer-btn btn-flag-down '+(ex.flagDown?'active':'')+'" onclick="toggleFlag('+exIdx+',\'down\')">▼ Down</button><button class="ex-footer-btn btn-notes-toggle" onclick="toggleNotes('+exIdx+')">📝</button>'+(activeSession.exercises.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="deleteExercise('+exIdx+')" style="margin-left:auto;background:var(--red-dim);color:var(--red)">✕ Remove</button>':'')+'</div><div class="ex-notes-area '+(ex.showNotes?'visible':'')+'" id="notes-area-'+exIdx+'"><textarea placeholder="Notes..." onchange="updateNotes('+exIdx+',this.value)">'+(ex.notes||'')+'</textarea></div>';
     html+='</div>';
   });
   html+='<button class="btn btn-secondary btn-block" onclick="showAddExerciseModal()">+ Add Exercise</button>';
@@ -1315,6 +1328,19 @@ function updateSet(ei,si,f,v){
 }
 function clearAutofill(el){el.classList.remove('autofilled');}
 function toggleWarmup(ei,si){if(!activeSession)return;var s=activeSession.exercises[ei].sets[si];s.warmup=!s.warmup;persistSession();renderActiveSession();}
+function toggleExCollapse(ei){if(!activeSession)return;var ex=activeSession.exercises[ei];ex._collapsed=!ex._collapsed;persistSession();renderActiveSession();}
+function addWarmupSets(ei){
+  if(!activeSession)return;
+  var ex=activeSession.exercises[ei];
+  var wkW=0;ex.sets.forEach(function(s){if(!s.warmup){var w=parseFloat(s.weight)||0;if(w>wkW)wkW=w;}});
+  if(wkW<=0){showToast('Enter a working weight first');return;}
+  var step=getUnits()==='kg'?2.5:5;
+  var rd=function(w){return Math.max(step,Math.round(w/step)*step);};
+  var ramp=[{p:0.4,r:8},{p:0.6,r:5},{p:0.8,r:3}];
+  var warm=ramp.map(function(x){return{weight:rd(wkW*x.p),reps:x.r,rir:3,failure:false,completed:false,warmup:true,_autofilled:true};});
+  ex.sets=warm.concat(ex.sets);
+  persistSession();renderActiveSession();showToast('Warm-up ramp added');
+}
 function getOverloadHint(name,wid){
   var prev=getPreviousExerciseData(name,wid);
   if(!prev||!prev.sets)return null;
@@ -1349,6 +1375,8 @@ function toggleComplete(ei,si){
     else{confettiBurst({count:45,power:11,y:window.innerHeight*0.62});}
     if(getRestAuto())startRestTimer();
   }
+  // Auto-collapse when every set is done; auto-expand if a set is un-completed
+  ex._collapsed=ex.sets.every(function(x){return x.completed;});
   persistSession();renderActiveSession();
 }
 function showPRCelebration(name){
@@ -1769,7 +1797,7 @@ function renderSettings(){
     html+='<div class="sync-login"><div class="sync-login-title">Sign In to Sync</div><div class="sync-login-sub">Sign in or create an account to back up your data. You\'ll stay logged in automatically.</div><div class="sync-form"><input type="text" id="sbUsernameInput" placeholder="Username" autocomplete="username" autocapitalize="none"><input type="password" id="sbPasswordInput" placeholder="Password" autocomplete="current-password"><button class="btn btn-primary btn-block" onclick="doSbLogin()">Sign In</button><button class="btn btn-secondary btn-block" onclick="doSbRegister()">Create Account</button></div></div>';
   }
 
-  html+='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Auto-start Rest Timer</span><button class="toggle-switch '+(getRestAuto()?'on':'')+'" onclick="setRestAuto(!getRestAuto());renderSettings()"></button></div></div>';
+  html+='<div class="settings-group"><div class="settings-row" onclick="openRestTimerSetting()"><span class="sr-label">Rest Timer Duration</span><span class="sr-value">'+rd+'s ›</span></div><div class="settings-row" style="cursor:default"><span class="sr-label">Auto-start Rest Timer</span><button class="toggle-switch '+(getRestAuto()?'on':'')+'" onclick="setRestAuto(!getRestAuto());renderSettings()"></button></div><div class="settings-row" style="cursor:default"><span class="sr-label">Rest Timer Sound</span><button class="toggle-switch '+(getRestSound()?'on':'')+'" onclick="setRestSound(!getRestSound());renderSettings()"></button></div></div>';
   html+='<div class="section-header">Preferences</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">Weight Unit</span><div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid var(--border-color)"><button style="padding:6px 14px;font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:'+(getUnits()==='lbs'?'var(--accent)':'var(--bg-elevated)')+';color:'+(getUnits()==='lbs'?'#fff':'var(--text-secondary)')+'" onclick="setUnits(\'lbs\');renderSettings()">lbs</button><button style="padding:6px 14px;font-size:13px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:'+(getUnits()==='kg'?'var(--accent)':'var(--bg-elevated)')+';color:'+(getUnits()==='kg'?'#fff':'var(--text-secondary)')+'" onclick="setUnits(\'kg\');renderSettings()">kg</button></div></div></div>';
   html+='<div class="section-header">Appearance</div><div class="settings-group"><div class="settings-row" style="cursor:default"><span class="sr-label">OLED Black Mode</span><button class="toggle-switch '+(oled?'on':'')+'" onclick="setOledMode(!getOledMode());renderSettings()"></button></div><div class="settings-row" style="cursor:default;flex-direction:column;align-items:flex-start;gap:8px"><span class="sr-label">Accent Color</span><div class="accent-picker" id="accentPicker"></div></div></div>';
   html+='<div class="section-header">Data</div><div class="settings-group"><div class="settings-row" onclick="exportData()"><span class="sr-label">Export All Data</span><span class="sr-value">JSON ›</span></div><div class="settings-row" onclick="document.getElementById(\'importInput\').click()"><span class="sr-label">Import Data</span><span class="sr-value">JSON ›</span></div>'+(hasModified?'<div class="settings-row" onclick="resetDefaults()"><span class="sr-label">Reset Default Workouts</span><span class="sr-value">›</span></div>':'')+'<div class="settings-row" onclick="clearAllData()" style="color:var(--red)"><span class="sr-label" style="color:var(--red)">Clear All Data</span><span class="sr-value" style="color:var(--red)">›</span></div></div><input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">';
