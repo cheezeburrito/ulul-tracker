@@ -520,7 +520,7 @@ textarea { resize: vertical; min-height: 60px; }
 </div>
 <script>
 const NS='ulul_';
-const KEYS={sessions:NS+'sessions',customWorkouts:NS+'custom_workouts',restDuration:NS+'rest_duration',flags:NS+'flags',lastWorkout:NS+'last_workout',deletedDefaults:NS+'deleted_defaults',editedDefaults:NS+'edited_defaults',bodyWeight:NS+'body_weight',oledMode:NS+'oled_mode',activeSession:NS+'active_session',workoutOrder:NS+'workout_order',units:NS+'units'};
+const KEYS={sessions:NS+'sessions',customWorkouts:NS+'custom_workouts',restDuration:NS+'rest_duration',flags:NS+'flags',lastWorkout:NS+'last_workout',deletedDefaults:NS+'deleted_defaults',editedDefaults:NS+'edited_defaults',bodyWeight:NS+'body_weight',oledMode:NS+'oled_mode',activeSession:NS+'active_session',workoutOrder:NS+'workout_order',units:NS+'units',rotation:NS+'rotation'};
 
 const DEFAULT_WORKOUTS=[
 {id:'upper_a',name:'Upper A',subtitle:'Flat Bench / Chest Shape / Tricep Focus',isDefault:true,
@@ -662,6 +662,17 @@ function restoreSession(){
 function clearPersistedSession(){localStorage.removeItem(KEYS.activeSession);}
 function getWorkoutOrder(){return loadJSON(KEYS.workoutOrder,[]);}
 function saveWorkoutOrder(o){saveJSON(KEYS.workoutOrder,o);}
+/* WEEKLY ROTATION: ordered list of workout ids (slot 0 = 1st day ... up to 7) */
+function getRotation(){return loadJSON(KEYS.rotation,[]);}
+function saveRotation(r){saveJSON(KEYS.rotation,r);}
+function getWorkoutRotationSlot(id){var r=getRotation();for(var i=0;i<r.length;i++)if(r[i]===id)return i;return -1;}
+function setWorkoutRotationSlot(id,slot){
+  var r=getRotation();while(r.length<7)r.push(null);
+  for(var i=0;i<r.length;i++)if(r[i]===id)r[i]=null; // clear existing slot for this workout
+  if(slot>=0&&slot<7)r[slot]=id; // replaces any current occupant (it becomes unassigned)
+  while(r.length&&r[r.length-1]==null)r.pop(); // trim trailing empties
+  saveRotation(r);
+}
 
 /* ============================================================
    SUPABASE: Username/Password auth + cloud sync
@@ -693,7 +704,7 @@ function getSbToken(){return getCookie('ulul_sb_token');}
 function getSbUsername(){return getCookie('ulul_sb_user');}
 
 function getAllDataForSync(){
-  return{sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),activeSession:loadJSON(KEYS.activeSession,null),syncDate:new Date().toISOString(),version:'2.0'};
+  return{sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),rotation:getRotation(),activeSession:loadJSON(KEYS.activeSession,null),syncDate:new Date().toISOString(),version:'2.0'};
 }
 
 function restoreAllData(data){
@@ -707,6 +718,7 @@ function restoreAllData(data){
   if(data.editedDefaults)saveEditedDefaults(data.editedDefaults);
   if(data.bodyWeight)saveBodyWeightLog(data.bodyWeight);
   if(data.workoutOrder)saveWorkoutOrder(data.workoutOrder);
+  if(data.rotation)saveRotation(data.rotation);
   if(data.activeSession)saveJSON(KEYS.activeSession,data.activeSession);
 }
 
@@ -763,6 +775,7 @@ function mergeAllData(local,cloud){
     deletedDefaults:_unionArr(local.deletedDefaults,cloud.deletedDefaults),
     editedDefaults:Object.assign({},local.editedDefaults,newer.editedDefaults),
     workoutOrder:(newer.workoutOrder&&newer.workoutOrder.length)?newer.workoutOrder:(local.workoutOrder||cloud.workoutOrder||[]),
+    rotation:(newer.rotation&&newer.rotation.length)?newer.rotation:(local.rotation||cloud.rotation||[]),
     activeSession:local.activeSession||cloud.activeSession||null,
     syncDate:new Date().toISOString(),version:'2.0'
   };
@@ -826,11 +839,20 @@ function getAllWorkouts(){
   return all;
 }
 function getNextWorkout(){
-  const lastId=getLastWorkout();const order=['upper_a','lower_a','upper_b','lower_b'];
-  const deleted=getDeletedDefaults();const available=order.filter(id=>!deleted.includes(id));
-  if(!available.length){const all=getAllWorkouts();return all.length?all[0].id:null;}
-  if(!lastId)return available[0];const idx=available.indexOf(lastId);
-  return idx===-1?available[0]:available[(idx+1)%available.length];
+  var lastId=getLastWorkout();
+  var allIds=getAllWorkouts().map(function(w){return w.id;});
+  // User-defined weekly rotation takes priority
+  var rot=getRotation().filter(function(id){return id&&allIds.indexOf(id)!==-1;});
+  if(rot.length){
+    var ri=rot.indexOf(lastId);
+    return ri===-1?rot[0]:rot[(ri+1)%rot.length];
+  }
+  // Fallback: legacy default upper/lower rotation
+  var deleted=getDeletedDefaults();
+  var order=['upper_a','lower_a','upper_b','lower_b'].filter(function(id){return deleted.indexOf(id)===-1&&allIds.indexOf(id)!==-1;});
+  if(!order.length){return allIds.length?allIds[0]:null;}
+  if(!lastId)return order[0];var idx=order.indexOf(lastId);
+  return idx===-1?order[0]:order[(idx+1)%order.length];
 }
 function getPreviousExerciseData(name,wid){
   const sessions=getSessions();
@@ -1717,7 +1739,8 @@ function renderWorkouts(){
     var detail=w.subtitle||(w.short?w.short.length+' exercises':(w.exercises?w.exercises.length+' exercises':''));
     html+='<div class="workout-list-item '+(sel?'selected':'')+'" onclick="'+(workoutSelectMode?'toggleWorkoutSelect(\''+w.id+'\')':'previewWorkout(\''+w.id+'\')')+'">';
     if(workoutSelectMode)html+='<button class="wli-checkbox '+(sel?'checked':'')+'" onclick="event.stopPropagation();toggleWorkoutSelect(\''+w.id+'\')">'+(sel?'✓':'')+'</button>';
-    html+='<div class="wli-left"><div class="wli-name">'+w.name+(w.isDefault?' <span class="badge badge-blue" style="font-size:9px">DEFAULT</span>':'')+'</div><div class="wli-detail">'+detail+'</div></div>';
+    var _rslot=getWorkoutRotationSlot(w.id);
+    html+='<div class="wli-left"><div class="wli-name">'+w.name+(w.isDefault?' <span class="badge badge-blue" style="font-size:9px">DEFAULT</span>':'')+(_rslot>=0?' <span class="badge badge-green" style="font-size:9px">DAY '+(_rslot+1)+'</span>':'')+'</div><div class="wli-detail">'+detail+'</div></div>';
     if(!workoutSelectMode)html+='<div class="wli-actions"><div class="wli-reorder"><button class="wli-reorder-btn" onclick="event.stopPropagation();moveWorkout(\''+w.id+'\',-1)" '+(i===0?'disabled':'')+'>▲</button><button class="wli-reorder-btn" onclick="event.stopPropagation();moveWorkout(\''+w.id+'\',1)" '+(i===allW.length-1?'disabled':'')+'>▼</button></div><button class="ex-icon-btn" onclick="event.stopPropagation();editWorkout(\''+w.id+'\')" title="Edit">✎</button><button class="ex-icon-btn" onclick="event.stopPropagation();duplicateWorkout(\''+w.id+'\')" title="Duplicate">⧉</button></div>';
     html+='</div>';
   });
@@ -1762,16 +1785,20 @@ function previewWorkout(id){
 
 /* WORKOUT BUILDER */
 var builderState=null;
-function editWorkout(id){var allW=getAllWorkouts();var w=allW.find(function(x){return x.id===id;});if(!w)return;builderState=JSON.parse(JSON.stringify(w));builderState._editing=true;builderState._isDefault=!!w.isDefault;if(w.short&&w.short.length>0)builderState.hasVersions=true;renderBuilder();}
+function editWorkout(id){var allW=getAllWorkouts();var w=allW.find(function(x){return x.id===id;});if(!w)return;builderState=JSON.parse(JSON.stringify(w));builderState._editing=true;builderState._isDefault=!!w.isDefault;builderState._rotationSlot=getWorkoutRotationSlot(w.id);if(w.short&&w.short.length>0)builderState.hasVersions=true;renderBuilder();}
 function openWorkoutBuilder(editId){
   if(editId){editWorkout(editId);return;}
-  builderState={id:'custom_'+generateId(),name:'',subtitle:'',isDefault:false,hasVersions:false,short:[],optimal:[],exercises:[{name:'',sets:2,reps:'8-12'}],_editing:false,_isDefault:false};renderBuilder();
+  builderState={id:'custom_'+generateId(),name:'',subtitle:'',isDefault:false,hasVersions:false,short:[],optimal:[],exercises:[{name:'',sets:2,reps:'8-12'}],_editing:false,_isDefault:false,_rotationSlot:-1};renderBuilder();
 }
 function renderBuilder(){
   var bs=builderState;var isV=bs.hasVersions||(bs.short&&bs.short.length>0&&bs._editing);
   var html='<div class="modal-title">'+(bs._editing?'Edit':'Create')+' Workout</div>';
   html+='<div style="margin-bottom:12px"><label class="label">Workout Name</label><input type="text" id="builderName" value="'+bs.name+'" placeholder="e.g. Push Day" onchange="builderState.name=this.value"></div>';
   html+='<div style="margin-bottom:12px"><label class="label">Subtitle (optional)</label><input type="text" id="builderSub" value="'+(bs.subtitle||'')+'" placeholder="e.g. Chest & Triceps" onchange="builderState.subtitle=this.value"></div>';
+  var _rs=(bs._rotationSlot==null?-1:bs._rotationSlot);
+  var _rsOpts='<option value="-1"'+(_rs===-1?' selected':'')+'>Not in weekly rotation</option>';
+  for(var _d=0;_d<7;_d++){_rsOpts+='<option value="'+_d+'"'+(_rs===_d?' selected':'')+'>'+(_d+1)+(['st','nd','rd'][_d]||'th')+' workout of week</option>';}
+  html+='<div style="margin-bottom:12px"><label class="label">Weekly Rotation</label><select id="builderRotation" onchange="builderState._rotationSlot=parseInt(this.value)">'+_rsOpts+'</select><div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">Sets the order workouts appear as “Up Next” on the home page.</div></div>';
   html+='<div class="toggle-row" style="border-bottom:none;margin-bottom:12px"><span class="toggle-label">Short & Optimal versions</span><button class="toggle-switch '+(isV?'on':'')+'" onclick="toggleBuilderVersions()"></button></div>';
   if(isV){
     html+='<div class="section-header">Short Version</div>'+renderBuilderExercises(bs.short||[],'short')+'<button class="btn btn-secondary btn-sm" onclick="addBuilderExercise(\'short\')" style="margin-bottom:16px">+ Add Exercise</button>';
@@ -1800,6 +1827,8 @@ function saveBuilder(){
   else{w.exercises=(builderState.exercises||[]).filter(function(e){return e.name.trim();});}
   if(builderState._isDefault){var edited=getEditedDefaults();edited[builderState.id]=w;saveEditedDefaults(edited);}
   else{w.isDefault=false;var customs=getCustomWorkouts();var idx=-1;for(var ci=0;ci<customs.length;ci++){if(customs[ci].id===w.id){idx=ci;break;}}if(idx>=0)customs[idx]=w;else customs.push(w);saveCustomWorkouts(customs);}
+  if(builderState._rotationSlot!=null)setWorkoutRotationSlot(w.id,builderState._rotationSlot);
+  if(typeof sbAutoSync==='function')sbAutoSync();
   closeModal();renderWorkouts();showToast(builderState._editing?'Workout updated':'Workout created');builderState=null;
 }
 function duplicateWorkout(id){var allW=getAllWorkouts();var o=allW.find(function(w){return w.id===id;});if(!o)return;var c=JSON.parse(JSON.stringify(o));c.id='custom_'+generateId();c.name+=' (Copy)';c.isDefault=false;var customs=getCustomWorkouts();customs.push(c);saveCustomWorkouts(customs);renderWorkouts();showToast('Workout duplicated');}
@@ -1908,12 +1937,12 @@ function adjustRestSetting(d){var s=document.getElementById('restSettingSlider')
 function updateRestSettingFromSlider(v){document.getElementById('restSettingDisplay').textContent=v+'s';}
 function saveRestSetting(){setRestDuration(parseInt(document.getElementById('restSettingSlider').value));closeModal();renderSettings();showToast('Rest timer updated');}
 function exportData(){
-  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),exportDate:new Date().toISOString(),version:'2.0'};
+  var data={sessions:getSessions(),customWorkouts:getCustomWorkouts(),flags:getFlags(),restDuration:getRestDuration(),lastWorkout:getLastWorkout(),deletedDefaults:getDeletedDefaults(),editedDefaults:getEditedDefaults(),bodyWeight:getBodyWeightLog(),workoutOrder:getWorkoutOrder(),rotation:getRotation(),exportDate:new Date().toISOString(),version:'2.0'};
   var blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='ulul-backup-'+new Date().toISOString().split('T')[0]+'.json';a.click();URL.revokeObjectURL(url);showToast('Data exported');
 }
 function importData(event){
   var file=event.target.files[0];if(!file)return;var reader=new FileReader();
-  reader.onload=function(e){try{var data=JSON.parse(e.target.result);showConfirm('Import Data?','This replaces all current data.',function(){if(data.sessions)saveSessions(data.sessions);if(data.customWorkouts)saveCustomWorkouts(data.customWorkouts);if(data.flags)saveFlags(data.flags);if(data.restDuration)setRestDuration(data.restDuration);if(data.lastWorkout)setLastWorkout(data.lastWorkout);if(data.deletedDefaults)saveDeletedDefaults(data.deletedDefaults);if(data.editedDefaults)saveEditedDefaults(data.editedDefaults);if(data.bodyWeight)saveBodyWeightLog(data.bodyWeight);if(data.workoutOrder)saveWorkoutOrder(data.workoutOrder);showToast('Data imported');renderSettings();});}catch(err){showToast('Invalid file format');}};
+  reader.onload=function(e){try{var data=JSON.parse(e.target.result);showConfirm('Import Data?','This replaces all current data.',function(){if(data.sessions)saveSessions(data.sessions);if(data.customWorkouts)saveCustomWorkouts(data.customWorkouts);if(data.flags)saveFlags(data.flags);if(data.restDuration)setRestDuration(data.restDuration);if(data.lastWorkout)setLastWorkout(data.lastWorkout);if(data.deletedDefaults)saveDeletedDefaults(data.deletedDefaults);if(data.editedDefaults)saveEditedDefaults(data.editedDefaults);if(data.bodyWeight)saveBodyWeightLog(data.bodyWeight);if(data.workoutOrder)saveWorkoutOrder(data.workoutOrder);if(data.rotation)saveRotation(data.rotation);showToast('Data imported');renderSettings();});}catch(err){showToast('Invalid file format');}};
   reader.readAsText(file);event.target.value='';
 }
 function clearAllData(){showConfirm('Clear All Data?','This permanently deletes everything.',function(){Object.keys(KEYS).forEach(function(k){localStorage.removeItem(KEYS[k]);});activeSession=null;clearPersistedSession();stopSessionTimer();showToast('All data cleared');switchTab('today');},'Clear Everything',true);}
