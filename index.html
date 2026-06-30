@@ -1722,7 +1722,8 @@ function renderWorkouts(){
     html+='</div>';
   });
 
-  html+='<div style="padding:16px 0;display:flex;gap:10px"><button class="btn btn-primary btn-block" onclick="openWorkoutBuilder()" style="flex:2">+ Create Workout</button><button class="btn btn-secondary btn-block" onclick="enterSelectMode()" style="flex:1">'+(workoutSelectMode?'Done':'Select')+'</button></div>';
+  html+='<div style="padding:16px 0 0;display:flex;gap:10px"><button class="btn btn-primary btn-block" onclick="openWorkoutBuilder()" style="flex:2">+ Create Workout</button><button class="btn btn-secondary btn-block" onclick="enterSelectMode()" style="flex:1">'+(workoutSelectMode?'Done':'Select')+'</button></div>';
+  html+='<button class="btn btn-secondary btn-block" style="margin:10px 0 16px" onclick="showAIImportModal()">✨ Import with AI</button>';
   container.innerHTML=html;
 }
 function enterSelectMode(){workoutSelectMode=!workoutSelectMode;workoutSelected.clear();renderWorkouts();}
@@ -1802,6 +1803,46 @@ function saveBuilder(){
   closeModal();renderWorkouts();showToast(builderState._editing?'Workout updated':'Workout created');builderState=null;
 }
 function duplicateWorkout(id){var allW=getAllWorkouts();var o=allW.find(function(w){return w.id===id;});if(!o)return;var c=JSON.parse(JSON.stringify(o));c.id='custom_'+generateId();c.name+=' (Copy)';c.isDefault=false;var customs=getCustomWorkouts();customs.push(c);saveCustomWorkouts(customs);renderWorkouts();showToast('Workout duplicated');}
+
+/* AI WORKOUT IMPORT: user gives this prompt to any AI chatbot, pastes the JSON back */
+var AI_IMPORT_PROMPT='I use a workout tracker app. Build me a workout and reply with ONLY a JSON code block in EXACTLY this structure (no explanation before or after):\n\n{\n  "workouts": [\n    {\n      "name": "Workout Name",\n      "subtitle": "short description (optional)",\n      "exercises": [\n        { "name": "Flat Bench Press", "sets": 3, "reps": "6-10" },\n        { "name": "Incline DB Press", "sets": 3, "reps": "8-12" }\n      ]\n    }\n  ]\n}\n\nRules:\n- "sets" must be a whole number.\n- "reps" must be a string like "8-12", "10", or "30s".\n- Use standard gym exercise names.\n- You can include multiple workouts in the "workouts" array.\n- Output ONLY the JSON.\n\nWhat I want (edit this line): a 3-day full-body routine for muscle growth';
+function showAIImportModal(){
+  var html='<div class="modal-title">Import with AI</div>';
+  html+='<p style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin-bottom:10px"><strong>Step 1.</strong> Copy this prompt, send it to Claude (or any AI), and edit the last line to describe the workout you want.</p>';
+  html+='<textarea id="aiPromptText" readonly style="height:150px;font-size:12px;font-family:ui-monospace,Menlo,monospace;line-height:1.4">'+escapeHtml(AI_IMPORT_PROMPT)+'</textarea>';
+  html+='<button class="btn btn-secondary btn-block" style="margin:8px 0 18px" onclick="copyAIPrompt()">📋 Copy Prompt</button>';
+  html+='<p style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin-bottom:8px"><strong>Step 2.</strong> Paste the AI\'s reply here and import.</p>';
+  html+='<textarea id="aiImportInput" placeholder="Paste the AI response here..." style="height:120px;font-size:13px;font-family:ui-monospace,Menlo,monospace"></textarea>';
+  html+='<button class="btn btn-primary btn-block" style="margin-top:12px" onclick="importWorkoutFromAI()">Import Workout</button>';
+  openModal(html);
+}
+function copyAIPrompt(){
+  var ta=document.getElementById('aiPromptText');if(!ta)return;
+  var txt=ta.value;
+  function ok(){showToast('Prompt copied!');}
+  function fallback(){ta.removeAttribute('readonly');ta.focus();ta.setSelectionRange(0,txt.length);try{document.execCommand('copy');ok();}catch(e){showToast('Select the text and copy manually');}ta.setAttribute('readonly','readonly');}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(ok,fallback);}else{fallback();}
+}
+function importWorkoutFromAI(){
+  var ta=document.getElementById('aiImportInput');var raw=(ta?ta.value:'').trim();
+  if(!raw){showToast('Paste the AI response first');return;}
+  raw=raw.replace(/^```(json)?/i,'').replace(/```$/,'').trim();
+  var data=null;
+  try{data=JSON.parse(raw);}catch(e){var m=raw.match(/[\{\[][\s\S]*[\}\]]/);if(m){try{data=JSON.parse(m[0]);}catch(e2){}}}
+  if(!data){showToast('Could not read that — make sure it is valid JSON');return;}
+  var list=Array.isArray(data)?data:(data.workouts&&Array.isArray(data.workouts)?data.workouts:[data]);
+  var customs=getCustomWorkouts();var added=0;
+  list.forEach(function(w){
+    if(!w||!w.name||!Array.isArray(w.exercises))return;
+    var exs=w.exercises.map(function(e){return{name:String(e&&e.name||'').trim(),sets:Math.max(1,parseInt(e&&e.sets)||2),reps:String(e&&e.reps!=null?e.reps:'8-12').trim()||'8-12'};}).filter(function(e){return e.name;});
+    if(!exs.length)return;
+    customs.push({id:'custom_'+generateId(),name:String(w.name).trim().slice(0,60),subtitle:String(w.subtitle||'').trim().slice(0,80),isDefault:false,exercises:exs});
+    added++;
+  });
+  if(!added){showToast('No valid workouts found in that text');return;}
+  saveCustomWorkouts(customs);if(typeof sbAutoSync==='function')sbAutoSync();
+  closeModal();renderWorkouts();showToast('Imported '+added+' workout'+(added>1?'s':'')+'!');
+}
 
 /* SETTINGS */
 function renderSettings(){
