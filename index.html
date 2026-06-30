@@ -549,7 +549,6 @@ function setOledMode(v){localStorage.setItem(KEYS.oledMode,v?'true':'false');app
 function applyOled(){if(getOledMode())document.body.classList.add('oled');else document.body.classList.remove('oled');}
 function getUnits(){return localStorage.getItem(KEYS.units)||'lbs';}
 function setUnits(u){localStorage.setItem(KEYS.units,u);}
-function wt(val){if(!val&&val!==0)return '';var n=parseFloat(val);if(isNaN(n))return '';return n;}
 function wtLabel(){return getUnits();}
 
 /* 1RM ESTIMATE (Epley formula) */
@@ -965,7 +964,7 @@ function getWeeklyVolume(){
     sessions.forEach(function(s){
       var d=new Date(s.date);
       if(d>=weekStart&&d<weekEnd){
-        s.exercises.forEach(function(ex){sets+=ex.sets.filter(function(st){return st.completed;}).length;});
+        s.exercises.forEach(function(ex){sets+=ex.sets.filter(function(st){return st.completed&&!st.warmup;}).length;});
       }
     });
     var label;
@@ -1407,7 +1406,7 @@ function filterHistory(){
     html+='<div class="history-session" id="hist-'+s.id+'">';
     html+='<div class="history-session-header" onclick="toggleHistSession(\''+s.id+'\')">';
     html+='<div class="hs-left">';
-    html+='<div class="hs-name">'+s.workoutName+' <span class="badge badge-blue">'+s.version+'</span></div>';
+    html+='<div class="hs-name">'+escapeHtml(s.workoutName)+' <span class="badge badge-blue">'+escapeHtml(s.version)+'</span></div>';
     html+='<div class="hs-date">'+formatDate(s.date)+' at '+formatTime(s.date)+'</div>';
     html+='<div class="hs-summary">';
     html+='<div class="hs-summary-item"><strong>'+completedSets+'</strong>/'+totalSets+' sets</div>';
@@ -1730,10 +1729,10 @@ function renderCalendar(){
     var daySessions=sessionMap[calSelectedDate];
     daySessions.forEach(function(s){
       html+='<div class="cal-day-detail">';
-      html+='<div class="cal-detail-header">'+s.workoutName+' <span class="badge badge-blue">'+s.version+'</span></div>';
+      html+='<div class="cal-detail-header">'+escapeHtml(s.workoutName)+' <span class="badge badge-blue">'+escapeHtml(s.version)+'</span></div>';
       html+='<div class="cal-detail-sub">'+formatTime(s.date)+(s.startTime?' &middot; Started '+formatTime(s.startTime):'')+'</div>';
       s.exercises.forEach(function(ex){
-        html+='<div class="cal-detail-ex-name">'+ex.name+'</div>';
+        html+='<div class="cal-detail-ex-name">'+escapeHtml(ex.name)+'</div>';
         ex.sets.forEach(function(set,i){
           var rl=set.rir>=4?'4+':set.rir;
           html+='<div class="cal-detail-ex">Set '+(i+1)+': '+(set.weight||'-')+' '+wtLabel()+' × '+(set.reps||'-')+', RIR '+rl+(set.failure?' ✕':'')+(set.completed?'':' (skip)')+'</div>';
