@@ -327,6 +327,9 @@ textarea { resize: vertical; min-height: 60px; }
 .hist-ex-tap:active { opacity:0.6; }
 .plate-vis { display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;padding:20px 12px;background:var(--bg-elevated);border-radius:var(--radius-md);margin-bottom:14px;min-height:60px; }
 .plate-chip { display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;border-radius:5px;min-width:34px;padding:14px 7px;box-shadow:0 1px 3px rgba(0,0,0,0.4);font-variant-numeric:tabular-nums; }
+.vol-bar-col { cursor:pointer; }
+.vol-bar-col .vol-bar.sel { box-shadow:0 0 0 2px var(--bg-card),0 0 0 4px var(--accent); }
+.vol-bar-col.selected .vol-bar-label { color:var(--accent);font-weight:700; }
 .muscle-row { display:flex;align-items:center;gap:10px;margin-bottom:8px; }
 .muscle-row:last-child { margin-bottom:0; }
 .muscle-name { font-size:12px;font-weight:600;color:var(--text-secondary);width:84px;flex-shrink:0; }
@@ -568,11 +571,13 @@ function getMuscleGroup(name){
   if(/bench|chest|fly|pec|incline|press/.test(n))return 'Chest';
   return 'Other';
 }
-function getMuscleVolumeThisWeek(){
+function getMuscleVolumeForWeek(offset){
+  offset=offset||0;
   var sessions=getSessions();var now=new Date();
-  var weekStart=new Date(now);weekStart.setDate(weekStart.getDate()-weekStart.getDay());weekStart.setHours(0,0,0,0);
+  var weekStart=new Date(now);weekStart.setDate(weekStart.getDate()-weekStart.getDay()-offset*7);weekStart.setHours(0,0,0,0);
+  var weekEnd=new Date(weekStart);weekEnd.setDate(weekEnd.getDate()+7);
   var counts={};
-  sessions.forEach(function(s){var d=new Date(s.date);if(d<weekStart)return;
+  sessions.forEach(function(s){var d=new Date(s.date);if(d<weekStart||d>=weekEnd)return;
     s.exercises.forEach(function(ex){
       var done=ex.sets.filter(function(st){return st.completed&&!st.warmup;}).length;
       if(done<=0)return;var g=getMuscleGroup(ex.name);counts[g]=(counts[g]||0)+done;
@@ -580,6 +585,7 @@ function getMuscleVolumeThisWeek(){
   });
   return counts;
 }
+function getMuscleVolumeThisWeek(){return getMuscleVolumeForWeek(0);}
 function setRestDuration(s){localStorage.setItem(KEYS.restDuration,s);}
 function getLastWorkout(){return localStorage.getItem(KEYS.lastWorkout)||null;}
 function setLastWorkout(id){localStorage.setItem(KEYS.lastWorkout,id);}
@@ -792,6 +798,8 @@ let workoutSelectMode=false;
 let workoutSelected=new Set();
 var _idleTimer=null;
 var IDLE_TIMEOUT_MS=60*60*1000; // 1 hour
+var _muscleWeek=0; // which week the Sets-per-Muscle card shows (0=this week)
+function selectMuscleWeek(offset){_muscleWeek=offset;renderToday();}
 
 /* UTILITY */
 function $(sel){return document.querySelector(sel);}
@@ -1098,7 +1106,7 @@ function getWeeklyVolume(){
     if(i===0)label='This wk';
     else if(i===1)label='Last wk';
     else label=i+'w ago';
-    weeks.push({sets:sets,label:label,current:i===0});
+    weeks.push({sets:sets,label:label,current:i===0,offset:i});
   }
   return weeks;
 }
@@ -1140,27 +1148,35 @@ function renderToday(){
   // Repeat last workout
   if(sessions.length>0){var _last=sessions[sessions.length-1];html+='<button class="repeat-last-btn" onclick="repeatLastWorkout()">↻ Repeat last <span class="rl-sub">'+escapeHtml(_last.workoutName)+'</span></button>';}
 
-  // Volume chart (4 weeks)
+  // Volume chart (4 weeks) — tap a bar to drive the muscle breakdown below
   if(sessions.length>0){
+    if(!weekVol.some(function(w){return w.offset===_muscleWeek;}))_muscleWeek=0;
     var maxSets=Math.max.apply(null,weekVol.map(function(w){return w.sets;}))||1;
     html+='<div class="volume-chart"><div class="volume-chart-title">Weekly Volume (Sets)</div><div class="vol-bars">';
     weekVol.forEach(function(w){
       var h=Math.round((w.sets/maxSets)*80);
-      html+='<div class="vol-bar-col"><div class="vol-bar-val">'+w.sets+'</div><div class="vol-bar '+(w.current?'current':'')+'" style="height:'+Math.max(h,2)+'px"></div><div class="vol-bar-label">'+w.label+'</div></div>';
+      var sel=w.offset===_muscleWeek;
+      html+='<div class="vol-bar-col'+(sel?' selected':'')+'" onclick="selectMuscleWeek('+w.offset+')"><div class="vol-bar-val">'+w.sets+'</div><div class="vol-bar '+(w.current?'current':'')+(sel?' sel':'')+'" style="height:'+Math.max(h,2)+'px"></div><div class="vol-bar-label">'+w.label+'</div></div>';
     });
     html+='</div></div>';
   }
 
-  // Muscle-group volume (sets per muscle, this week)
-  var mv=getMuscleVolumeThisWeek();var mgKeys=Object.keys(mv);
-  if(mgKeys.length>0){
-    mgKeys.sort(function(a,b){return mv[b]-mv[a];});
-    var maxM=mv[mgKeys[0]]||1;
-    html+='<div class="volume-chart"><div class="volume-chart-title">Sets per Muscle (This Week)</div>';
-    mgKeys.forEach(function(g){
-      var w=Math.round((mv[g]/maxM)*100);
-      html+='<div class="muscle-row"><div class="muscle-name">'+g+'</div><div class="muscle-bar-track"><div class="muscle-bar" style="width:'+Math.max(w,4)+'%"></div></div><div class="muscle-count">'+mv[g]+'</div></div>';
-    });
+  // Muscle-group volume (sets per muscle) — follows the selected week
+  if(sessions.length>0){
+    var _selWk=weekVol.filter(function(w){return w.offset===_muscleWeek;})[0];
+    var _wkLabel=_selWk?_selWk.label:'This Week';
+    var mv=getMuscleVolumeForWeek(_muscleWeek);var mgKeys=Object.keys(mv);
+    html+='<div class="volume-chart"><div class="volume-chart-title">Sets per Muscle &middot; '+_wkLabel+'</div>';
+    if(mgKeys.length>0){
+      mgKeys.sort(function(a,b){return mv[b]-mv[a];});
+      var maxM=mv[mgKeys[0]]||1;
+      mgKeys.forEach(function(g){
+        var w=Math.round((mv[g]/maxM)*100);
+        html+='<div class="muscle-row"><div class="muscle-name">'+g+'</div><div class="muscle-bar-track"><div class="muscle-bar" style="width:'+Math.max(w,4)+'%"></div></div><div class="muscle-count">'+mv[g]+'</div></div>';
+      });
+    }else{
+      html+='<div style="font-size:13px;color:var(--text-tertiary);text-align:center;padding:8px 0">No sets logged this week</div>';
+    }
     html+='</div>';
   }
 
