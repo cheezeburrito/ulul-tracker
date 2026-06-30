@@ -1792,7 +1792,7 @@ function openWorkoutBuilder(editId){
 }
 function renderBuilder(){
   var bs=builderState;var isV=bs.hasVersions||(bs.short&&bs.short.length>0&&bs._editing);
-  var html='<div class="modal-title">'+(bs._editing?'Edit':'Create')+' Workout</div>';
+  var html='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px"><div class="modal-title" style="margin:0;text-align:left">'+(bs._editing?'Edit':'Create')+' Workout</div><button class="btn btn-primary btn-sm" onclick="saveBuilder()">Save</button></div>';
   html+='<div style="margin-bottom:12px"><label class="label">Workout Name</label><input type="text" id="builderName" value="'+bs.name+'" placeholder="e.g. Push Day" onchange="builderState.name=this.value"></div>';
   html+='<div style="margin-bottom:12px"><label class="label">Subtitle (optional)</label><input type="text" id="builderSub" value="'+(bs.subtitle||'')+'" placeholder="e.g. Chest & Triceps" onchange="builderState.subtitle=this.value"></div>';
   var _rs=(bs._rotationSlot==null?-1:bs._rotationSlot);
