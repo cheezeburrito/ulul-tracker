@@ -327,6 +327,22 @@ textarea { resize: vertical; min-height: 60px; }
 .hist-ex-tap:active { opacity:0.6; }
 .plate-vis { display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;padding:20px 12px;background:var(--bg-elevated);border-radius:var(--radius-md);margin-bottom:14px;min-height:60px; }
 .plate-chip { display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;border-radius:5px;min-width:34px;padding:14px 7px;box-shadow:0 1px 3px rgba(0,0,0,0.4);font-variant-numeric:tabular-nums; }
+.set-num-btn { background:none;border:none;font-family:inherit;cursor:pointer;padding:0; }
+.set-num.warmup { color:var(--orange); }
+.ex-hint { padding:0 16px 8px;font-size:12px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:4px; }
+.repeat-last-btn { width:100%;background:var(--bg-card);border:0.5px solid var(--border-color);border-radius:var(--radius-md);padding:12px 16px;margin-bottom:12px;color:var(--text-primary);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px; }
+.repeat-last-btn:active { background:var(--bg-card-hover); }
+.repeat-last-btn .rl-sub { color:var(--text-secondary);font-weight:500; }
+#screenFlash { position:fixed;inset:0;background:var(--accent);opacity:0;pointer-events:none;z-index:1600;display:none; }
+#screenFlash.flashing { display:block;animation:flashAnim 0.45s ease 4; }
+@keyframes flashAnim { 0%{opacity:0;} 50%{opacity:0.9;} 100%{opacity:0;} }
+#inputBar { position:fixed;left:0;right:0;bottom:0;display:none;gap:6px;padding:8px 10px;background:var(--bg-elevated);border-top:0.5px solid var(--border-color);z-index:2500;align-items:center;box-shadow:0 -2px 10px rgba(0,0,0,0.3); }
+#inputBar.visible { display:flex; }
+#inputBar .ib-step { flex:1;max-width:64px;padding:12px 0;border-radius:var(--radius-sm);border:none;background:var(--bg-card);color:var(--text-primary);font-size:18px;font-weight:700;font-family:inherit;cursor:pointer; }
+#inputBar .ib-step:active { background:var(--bg-card-hover); }
+#inputBar .ib-spacer { flex:1; }
+#inputBar .ib-next { padding:12px 16px;border-radius:var(--radius-sm);border:none;background:var(--bg-card);color:var(--accent);font-size:15px;font-weight:600;font-family:inherit;cursor:pointer; }
+#inputBar .ib-done { padding:12px 18px;border-radius:var(--radius-sm);border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer; }
 
 /* CLOUD SYNC */
 .login-screen { position: fixed; inset: 0; background: var(--bg-primary); z-index: 5000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; }
@@ -480,6 +496,14 @@ textarea { resize: vertical; min-height: 60px; }
   <div class="sf-left"><div class="sf-name" id="sfName"></div><div class="sf-time" id="sfTime"></div></div>
   <div class="sf-right" id="sfProgress">Tap to return</div>
 </div>
+<div id="screenFlash"></div>
+<div id="inputBar">
+  <button class="ib-step" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="stepFocused(-1)">−</button>
+  <button class="ib-step" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="stepFocused(1)">+</button>
+  <div class="ib-spacer"></div>
+  <button class="ib-next" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="focusNextInput()">Next ▸</button>
+  <button class="ib-done" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="dismissKeyboard()">Done</button>
+</div>
 <script>
 const NS='ulul_';
 const KEYS={sessions:NS+'sessions',customWorkouts:NS+'custom_workouts',restDuration:NS+'rest_duration',flags:NS+'flags',lastWorkout:NS+'last_workout',deletedDefaults:NS+'deleted_defaults',editedDefaults:NS+'edited_defaults',bodyWeight:NS+'body_weight',oledMode:NS+'oled_mode',activeSession:NS+'active_session',workoutOrder:NS+'workout_order',units:NS+'units'};
@@ -557,7 +581,7 @@ function restoreSession(){
   var saved=loadJSON(KEYS.activeSession,null);
   if(saved&&saved.workoutId&&saved.exercises&&saved.exercises.length>0){
     activeSession=saved;
-    startSessionTimer();
+    startSessionTimer();requestWakeLock();
     // Auto-complete if session was idle for over an hour since last persist
     var lastActivity=saved._lastActivity||saved.startTime;
     var idleMs=Date.now()-new Date(lastActivity).getTime();
@@ -780,6 +804,66 @@ function playAlarm(){
 // Unlock audio context on first tap anywhere
 document.addEventListener('touchstart',function(){try{_getAudioCtx();}catch(e){}},{once:true,passive:true});
 
+/* SCREEN FLASH: visual alert (iOS has no web vibration) */
+function flashScreen(){var f=document.getElementById('screenFlash');if(!f)return;f.classList.remove('flashing');void f.offsetWidth;f.classList.add('flashing');setTimeout(function(){f.classList.remove('flashing');},2000);}
+
+/* WAKE LOCK: keep iPhone screen awake during a workout */
+var _wakeLock=null;
+function requestWakeLock(){
+  try{if('wakeLock' in navigator){navigator.wakeLock.request('screen').then(function(wl){_wakeLock=wl;_wakeLock.addEventListener('release',function(){_wakeLock=null;});}).catch(function(){});}}catch(e){}
+}
+function releaseWakeLock(){try{if(_wakeLock){_wakeLock.release();_wakeLock=null;}}catch(e){}}
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&activeSession)requestWakeLock();});
+
+/* KEYBOARD ACCESSORY BAR: steppers + dismiss, positioned above iOS keyboard */
+var _focusedInput=null;
+function onSetInputFocus(el){_focusedInput=el;var bar=document.getElementById('inputBar');if(bar){bar.classList.add('visible');positionInputBar();}if(el.select)try{el.select();}catch(e){}}
+function onSetInputBlur(){setTimeout(function(){var a=document.activeElement;if(!a||!a.classList||!a.classList.contains('set-input')){var bar=document.getElementById('inputBar');if(bar)bar.classList.remove('visible');_focusedInput=null;}},120);}
+function positionInputBar(){var bar=document.getElementById('inputBar');if(!bar||!window.visualViewport)return;var vv=window.visualViewport;var gap=window.innerHeight-(vv.height+vv.offsetTop);bar.style.bottom=(gap>0?gap:0)+'px';}
+if(window.visualViewport){window.visualViewport.addEventListener('resize',positionInputBar);window.visualViewport.addEventListener('scroll',positionInputBar);}
+function stepFocused(dir){
+  if(!_focusedInput)return;
+  var field=_focusedInput.dataset.field;
+  var step=field==='weight'?(getUnits()==='kg'?2.5:5):1;
+  var cur=parseFloat(_focusedInput.value)||0;
+  var nv=Math.max(0,Math.round((cur+dir*step)*100)/100);
+  _focusedInput.value=nv;
+  var ei=parseInt(_focusedInput.dataset.ei),si=parseInt(_focusedInput.dataset.si);
+  if(!isNaN(ei)&&!isNaN(si))updateSet(ei,si,field,String(nv));
+}
+function focusNextInput(){
+  if(!_focusedInput)return;
+  var inputs=Array.prototype.slice.call(document.querySelectorAll('.set-input'));
+  var idx=inputs.indexOf(_focusedInput);
+  if(idx>=0&&idx+1<inputs.length){var n=inputs[idx+1];n.focus();if(n.select)try{n.select();}catch(e){}}
+  else dismissKeyboard();
+}
+function dismissKeyboard(){if(_focusedInput)_focusedInput.blur();_focusedInput=null;var bar=document.getElementById('inputBar');if(bar)bar.classList.remove('visible');}
+
+/* SWIPE-TO-COMPLETE: swipe a set row right to mark done */
+var _swipe=null;
+document.addEventListener('touchstart',function(e){
+  if(!activeSession)return;
+  var t=e.target;
+  if(t.tagName==='INPUT'||t.tagName==='BUTTON'||t.tagName==='TEXTAREA')return;
+  var row=t.closest?t.closest('.set-row'):null;
+  if(!row)return;
+  _swipe={row:row,x:e.touches[0].clientX,y:e.touches[0].clientY,dx:0};
+},{passive:true});
+document.addEventListener('touchmove',function(e){
+  if(!_swipe)return;
+  var dx=e.touches[0].clientX-_swipe.x;var dy=e.touches[0].clientY-_swipe.y;
+  if(Math.abs(dy)>Math.abs(dx)){_swipe=null;return;}
+  if(dx>0){_swipe.dx=dx;_swipe.row.style.transition='none';_swipe.row.style.transform='translateX('+Math.min(dx,90)+'px)';}
+},{passive:true});
+document.addEventListener('touchend',function(){
+  if(!_swipe)return;
+  var row=_swipe.row,dx=_swipe.dx;
+  row.style.transition='transform 0.2s';row.style.transform='';
+  if(dx>60){var p=row.id.split('-');var ei=parseInt(p[1]),si=parseInt(p[2]);if(!isNaN(ei)&&!isNaN(si))toggleComplete(ei,si);}
+  _swipe=null;
+},{passive:true});
+
 /* REST TIMER: timestamp-based so it survives app backgrounding */
 var restTimerEndTime=0;
 function startRestTimer(){
@@ -792,6 +876,7 @@ function startRestTimer(){
       // Overtime mode: show negative timer
       if(restTimerRemaining===0){
         playAlarm();
+        flashScreen();
         if(navigator.vibrate)navigator.vibrate([200,100,200,100,200]);
         if(document.hidden&&Notification&&Notification.permission==='granted'){
           try{new Notification('ULUL Tracker',{body:'Rest time is up! Get back to it.',icon:'https://cheezeburrito.github.io/ulul-tracker/preview.png',tag:'rest-timer'});}catch(e){}
@@ -852,7 +937,7 @@ function getAllPRs(){
   sessions.forEach(function(s){
     s.exercises.forEach(function(ex){
       ex.sets.forEach(function(set){
-        if(!set.completed||!set.weight)return;
+        if(!set.completed||!set.weight||set.warmup)return;
         var w=parseFloat(set.weight);if(isNaN(w)||w<=0)return;
         var key=ex.name;
         if(!prs[key]||w>prs[key].weight){prs[key]={weight:w,reps:set.reps,date:s.date,workoutName:s.workoutName};}
@@ -925,6 +1010,9 @@ function renderToday(){
 
   // Next workout
   if(nextW){html+='<div class="next-workout-card"><div class="overline">Up Next</div><div class="workout-name">'+nextW.name+'</div><div class="workout-sub">'+(nextW.subtitle||'')+'</div><button class="btn btn-primary btn-block" onclick="startWorkoutSelect(\''+nextW.id+'\')">Start Workout</button></div>';}
+
+  // Repeat last workout
+  if(sessions.length>0){var _last=sessions[sessions.length-1];html+='<button class="repeat-last-btn" onclick="repeatLastWorkout()">↻ Repeat last <span class="rl-sub">'+escapeHtml(_last.workoutName)+'</span></button>';}
 
   // Volume chart (4 weeks)
   if(sessions.length>0){
@@ -1023,8 +1111,23 @@ function beginSession(wid,version){
           return{weight:ps?ps.weight:'',reps:'',rir:i===0?1:0,failure:i===1,completed:false,_autofilled:!!ps};
         })};
     })};
-  startSessionTimer();persistSession();resetIdleTimer();renderActiveSession();
+  startSessionTimer();persistSession();resetIdleTimer();requestWakeLock();renderActiveSession();
   // Request notification permission for rest timer alerts
+  if(Notification&&Notification.permission==='default'){Notification.requestPermission();}
+}
+
+/* REPEAT LAST WORKOUT: restart exactly what you did last time, weights pre-filled */
+function repeatLastWorkout(){
+  var sessions=getSessions();if(!sessions.length){showToast('No previous workout');return;}
+  var last=sessions[sessions.length-1];
+  var flags=getFlags();
+  activeSession={workoutId:last.workoutId,workoutName:last.workoutName,version:last.version,startTime:new Date().toISOString(),
+    exercises:last.exercises.map(function(ex){
+      var flag=flags[last.workoutId+'::'+ex.name]||null;
+      return{id:generateId(),name:ex.name,targetReps:(ex.sets[0]&&ex.sets[0].reps)?String(ex.sets[0].reps):'8-12',targetSets:ex.sets.length,notes:'',flagUp:flag==='up',flagDown:flag==='down',prevFlag:flag,
+        sets:ex.sets.map(function(s,i){return{weight:s.weight||'',reps:'',rir:s.rir!=null?s.rir:(i===0?1:0),failure:!!s.failure,completed:false,warmup:!!s.warmup,_autofilled:!!s.weight};})};
+    })};
+  startSessionTimer();persistSession();resetIdleTimer();requestWakeLock();renderActiveSession();
   if(Notification&&Notification.permission==='default'){Notification.requestPermission();}
 }
 
@@ -1041,11 +1144,12 @@ function renderActiveSession(){
     var allDone=ex.sets.every(function(s){return s.completed;});
     var prev=getPreviousExerciseData(ex.name,activeSession.workoutId);
     var hasPR=ex.sets.some(function(s){return s.completed&&s.weight&&isNewPR(ex.name,s.weight);});
-    var topW=0,bestRm=0;ex.sets.forEach(function(s){if(s.completed){var w=parseFloat(s.weight)||0;if(w>topW)topW=w;var rm=calc1RM(s.weight,s.reps)||0;if(rm>bestRm)bestRm=rm;}});
+    var topW=0,bestRm=0;ex.sets.forEach(function(s){if(s.completed&&!s.warmup){var w=parseFloat(s.weight)||0;if(w>topW)topW=w;var rm=calc1RM(s.weight,s.reps)||0;if(rm>bestRm)bestRm=rm;}});
     html+='<div class="exercise-card '+(allDone?'all-done':'')+'">';
     html+='<div class="ex-header"><div class="ex-header-left"><div class="ex-name">'+(ex.prevFlag==='up'?'<span class="flag-arrow flag-up">▲</span>':'')+(ex.prevFlag==='down'?'<span class="flag-arrow flag-down">▼</span>':'')+ex.name+(hasPR?'<span class="pr-badge">★ PR</span>':'')+'</div><div class="ex-rep-range">'+ex.targetSets+' × '+ex.targetReps+'</div></div><div class="ex-header-actions"><div class="reorder-btns"><button class="reorder-btn" onclick="moveExercise('+exIdx+',-1)" '+(exIdx===0?'disabled':'')+'>▲</button><button class="reorder-btn" onclick="moveExercise('+exIdx+',1)" '+(exIdx===activeSession.exercises.length-1?'disabled':'')+'>▼</button></div><button class="ex-icon-btn" onclick="showExerciseProgress(getActiveExName('+exIdx+'))" title="Progress">📈</button><button class="ex-icon-btn" onclick="showPlateCalc('+(topW||'')+')" title="Plate calculator">🏋</button><button class="ex-icon-btn" onclick="showSwapModal('+exIdx+')" title="Swap">⇄</button></div></div>';
     if(prev){var ps=prev.sets.map(function(s){return(s.weight||'?')+'×'+(s.reps||'?');}).join(', ');html+='<div class="ex-prev">Last: <span>'+ps+'</span>'+(bestRm>0?'<span style="margin-left:auto;color:var(--text-secondary);font-weight:600">e1RM '+bestRm+'</span>':'')+'</div>';}
     else if(bestRm>0){html+='<div class="ex-prev">Best e1RM today: <span>'+bestRm+' '+wtLabel()+'</span></div>';}
+    var _hint=getOverloadHint(ex.name,activeSession.workoutId);if(_hint)html+='<div class="ex-hint">🎯 '+_hint+'</div>';
     html+='<div class="set-table"><div class="set-row-header"><div>Set</div><div>Weight</div><div>Reps</div><div>RIR</div><div style="text-align:center">F</div><div style="text-align:center">✓</div></div>';
     ex.sets.forEach(function(set,setIdx){
       var rc='rir-'+Math.min(set.rir,4);var rl=set.rir>=4?'4+':set.rir.toString();
@@ -1053,7 +1157,7 @@ function renderActiveSession(){
       var prevSet=prev&&prev.sets&&prev.sets[setIdx]?prev.sets[setIdx]:null;
       var wPh=prevSet&&prevSet.weight?prevSet.weight:wtLabel();
       var rPh=prevSet&&prevSet.reps?prevSet.reps:ex.targetReps;
-      html+='<div class="set-row '+(set.completed?'completed':'')+'" id="set-'+exIdx+'-'+setIdx+'">'+(set.completed?'<div class="set-num">✓</div>':'<div class="set-num">'+(setIdx+1)+'</div>')+'<input type="number" class="set-input '+af+'" value="'+set.weight+'" placeholder="'+wPh+'" onchange="updateSet('+exIdx+','+setIdx+',\'weight\',this.value)" onfocus="clearAutofill(this)" inputmode="decimal"><input type="number" class="set-input" value="'+set.reps+'" placeholder="'+rPh+'" onchange="updateSet('+exIdx+','+setIdx+',\'reps\',this.value)" inputmode="numeric"><button class="rir-btn '+rc+'" onclick="cycleRIR('+exIdx+','+setIdx+')">'+rl+'</button><button class="fail-check '+(set.failure?'checked':'')+'" onclick="toggleFailure('+exIdx+','+setIdx+')">'+(set.failure?'✕':'')+'</button><button class="done-check '+(set.completed?'checked':'')+'" onclick="toggleComplete('+exIdx+','+setIdx+')">'+(set.completed?'✓':'')+'</button></div>';
+      html+='<div class="set-row '+(set.completed?'completed':'')+'" id="set-'+exIdx+'-'+setIdx+'"><button class="set-num set-num-btn'+(set.warmup?' warmup':'')+'" onclick="toggleWarmup('+exIdx+','+setIdx+')" title="Tap to toggle warmup">'+(set.warmup?'W':(setIdx+1))+'</button><input type="number" class="set-input '+af+'" value="'+set.weight+'" placeholder="'+wPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="weight" onchange="updateSet('+exIdx+','+setIdx+',\'weight\',this.value)" onfocus="clearAutofill(this);onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="decimal"><input type="number" class="set-input" value="'+set.reps+'" placeholder="'+rPh+'" data-ei="'+exIdx+'" data-si="'+setIdx+'" data-field="reps" onchange="updateSet('+exIdx+','+setIdx+',\'reps\',this.value)" onfocus="onSetInputFocus(this)" onblur="onSetInputBlur()" inputmode="numeric"><button class="rir-btn '+rc+'" onclick="cycleRIR('+exIdx+','+setIdx+')">'+rl+'</button><button class="fail-check '+(set.failure?'checked':'')+'" onclick="toggleFailure('+exIdx+','+setIdx+')">'+(set.failure?'✕':'')+'</button><button class="done-check '+(set.completed?'checked':'')+'" onclick="toggleComplete('+exIdx+','+setIdx+')">'+(set.completed?'✓':'')+'</button></div>';
     });
     html+='</div>';
     html+='<div class="ex-footer"><button class="ex-footer-btn btn-add-set" onclick="addSet('+exIdx+')">+ Set</button>'+(ex.sets.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="removeSet('+exIdx+')">- Set</button>':'')+'<button class="ex-footer-btn btn-flag-up '+(ex.flagUp?'active':'')+'" onclick="toggleFlag('+exIdx+',\'up\')">▲ Up</button><button class="ex-footer-btn btn-flag-down '+(ex.flagDown?'active':'')+'" onclick="toggleFlag('+exIdx+',\'down\')">▼ Down</button><button class="ex-footer-btn btn-notes-toggle" onclick="toggleNotes('+exIdx+')">📝</button>'+(activeSession.exercises.length>1?'<button class="ex-footer-btn btn-rm-set" onclick="deleteExercise('+exIdx+')" style="margin-left:auto;background:var(--red-dim);color:var(--red)">✕ Remove</button>':'')+'</div><div class="ex-notes-area '+(ex.showNotes?'visible':'')+'" id="notes-area-'+exIdx+'"><textarea placeholder="Notes..." onchange="updateNotes('+exIdx+',this.value)">'+(ex.notes||'')+'</textarea></div>';
@@ -1077,6 +1181,20 @@ function updateSet(ei,si,f,v){
   persistSession();
 }
 function clearAutofill(el){el.classList.remove('autofilled');}
+function toggleWarmup(ei,si){if(!activeSession)return;var s=activeSession.exercises[ei].sets[si];s.warmup=!s.warmup;persistSession();renderActiveSession();}
+function getOverloadHint(name,wid){
+  var prev=getPreviousExerciseData(name,wid);
+  if(!prev||!prev.sets)return null;
+  var best=null;
+  prev.sets.forEach(function(s){
+    if(!s.completed||s.warmup||!s.weight)return;
+    var w=parseFloat(s.weight)||0,r=parseInt(s.reps)||0;
+    if(w>0&&r>0&&(!best||w>best.w||(w===best.w&&r>best.r)))best={w:w,r:r};
+  });
+  if(!best)return null;
+  var step=getUnits()==='kg'?2.5:5;
+  return 'Last '+best.w+'×'+best.r+' — try '+best.w+'×'+(best.r+1)+' or '+(best.w+step)+'×'+best.r;
+}
 function cycleRIR(ei,si){if(!activeSession)return;activeSession.exercises[ei].sets[si].rir=(activeSession.exercises[ei].sets[si].rir+1)%5;persistSession();renderActiveSession();}
 function toggleFailure(ei,si){if(!activeSession)return;var s=activeSession.exercises[ei].sets[si];s.failure=!s.failure;if(s.failure)s.rir=0;persistSession();renderActiveSession();}
 function toggleComplete(ei,si){
@@ -1189,7 +1307,7 @@ function getExerciseHistory(name){
     if(!ex)return;
     var bestW=0,bestRm=0,vol=0;
     ex.sets.forEach(function(set){
-      if(!set.completed)return;var w=parseFloat(set.weight)||0,rp=parseInt(set.reps)||0;if(w<=0)return;
+      if(!set.completed||set.warmup)return;var w=parseFloat(set.weight)||0,rp=parseInt(set.reps)||0;if(w<=0)return;
       vol+=w*rp;if(w>bestW)bestW=w;var rm=calc1RM(set.weight,set.reps)||0;if(rm>bestRm)bestRm=rm;
     });
     if(bestW>0)pts.push({date:s.date,bestW:bestW,bestRm:bestRm,vol:vol});
@@ -1229,14 +1347,17 @@ function saveSession(){
   activeSession.exercises.forEach(function(ex){var k=activeSession.workoutId+'::'+ex.name;if(ex.flagUp)flags[k]='up';else if(ex.flagDown)flags[k]='down';else delete flags[k];});
   saveFlags(flags);
   var session={id:generateId(),workoutId:activeSession.workoutId,workoutName:activeSession.workoutName,version:activeSession.version,date:new Date().toISOString(),startTime:activeSession.startTime,
-    exercises:activeSession.exercises.map(function(ex){return{name:ex.name,notes:ex.notes||'',flagUp:ex.flagUp,flagDown:ex.flagDown,sets:ex.sets.map(function(s){return{weight:s.weight,reps:s.reps,rir:s.rir,failure:s.failure,completed:s.completed};})};})};
+    exercises:activeSession.exercises.map(function(ex){return{name:ex.name,notes:ex.notes||'',flagUp:ex.flagUp,flagDown:ex.flagDown,sets:ex.sets.map(function(s){return{weight:s.weight,reps:s.reps,rir:s.rir,failure:s.failure,completed:s.completed,warmup:!!s.warmup};})};})};
+  // Capture PRs from PRIOR history (before adding this session) so we detect genuinely new records
+  var _priorPRs=getAllPRs();
   var sessions=getSessions();sessions.push(session);saveSessions(sessions);setLastWorkout(activeSession.workoutId);
-  // Compute summary stats before clearing
+  // Compute summary stats before clearing (working sets only — exclude warmups)
   var _dur=Math.floor((new Date(session.date).getTime()-new Date(session.startTime).getTime())/1000);
   var _durStr=_dur>0?(Math.floor(_dur/3600)>0?Math.floor(_dur/3600)+'h ':'')+(Math.floor((_dur%3600)/60))+'m':'';
-  var _vol=0;var _sets=0;var _newPRs=[];var _allPRs=getAllPRs();
-  session.exercises.forEach(function(ex){ex.sets.forEach(function(s){if(s.completed){_sets++;var w=parseFloat(s.weight)||0,r=parseInt(s.reps)||0;_vol+=w*r;if(w>0&&_allPRs[ex.name]&&w>=_allPRs[ex.name].weight)_newPRs.push(ex.name);}});});
-  activeSession=null;clearPersistedSession();cancelIdleTimer();if(navigator.vibrate)navigator.vibrate([50,30,50]);
+  var _vol=0;var _sets=0;var _newPRs={};
+  session.exercises.forEach(function(ex){ex.sets.forEach(function(s){if(s.completed){_sets++;if(s.warmup)return;var w=parseFloat(s.weight)||0,r=parseInt(s.reps)||0;_vol+=w*r;if(w>0&&(!_priorPRs[ex.name]||w>_priorPRs[ex.name].weight))_newPRs[ex.name]=1;}});});
+  var _newPRsArr=Object.keys(_newPRs);
+  activeSession=null;clearPersistedSession();cancelIdleTimer();releaseWakeLock();dismissKeyboard();if(navigator.vibrate)navigator.vibrate([50,30,50]);
   sbPush();
   renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';
   // Show summary modal
@@ -1247,11 +1368,11 @@ function saveSession(){
   if(_vol>0)_sumHtml+='<div class="stat-card"><div class="stat-num orange">'+(_vol>999?(_vol/1000).toFixed(1)+'k':_vol)+'</div><div class="stat-label">Volume ('+wtLabel()+')</div></div>';
   _sumHtml+='<div class="stat-card"><div class="stat-num" style="color:var(--text-primary)">'+session.exercises.length+'</div><div class="stat-label">Exercises</div></div>';
   _sumHtml+='</div>';
-  if(_newPRs.length>0){_sumHtml+='<div style="background:rgba(255,214,10,0.1);border:0.5px solid rgba(255,214,10,0.3);border-radius:var(--radius-md);padding:12px;margin-bottom:16px"><div style="font-size:13px;font-weight:700;color:var(--yellow);margin-bottom:6px">★ Personal Records</div>';_newPRs.forEach(function(n){_sumHtml+='<div style="font-size:13px;color:var(--text-secondary);padding:2px 0">'+n+'</div>';});_sumHtml+='</div>';}
+  if(_newPRsArr.length>0){_sumHtml+='<div style="background:rgba(255,214,10,0.1);border:0.5px solid rgba(255,214,10,0.3);border-radius:var(--radius-md);padding:12px;margin-bottom:16px"><div style="font-size:13px;font-weight:700;color:var(--yellow);margin-bottom:6px">★ New Personal Records</div>';_newPRsArr.forEach(function(n){_sumHtml+='<div style="font-size:13px;color:var(--text-secondary);padding:2px 0">'+escapeHtml(n)+'</div>';});_sumHtml+='</div>';}
   _sumHtml+='<button class="btn btn-green btn-block" onclick="closeModal()">Done</button>';
   openModal(_sumHtml);
 }
-function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();cancelIdleTimer();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
+function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();cancelIdleTimer();releaseWakeLock();dismissKeyboard();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
 
 /* HISTORY TAB */
 function renderHistory(){
@@ -1277,7 +1398,7 @@ function filterHistory(){
     s.exercises.forEach(function(ex){
       ex.sets.forEach(function(set){
         totalSets++;
-        if(set.completed){completedSets++;var w=parseFloat(set.weight)||0;var r=parseInt(set.reps)||0;totalVolume+=w*r;}
+        if(set.completed){completedSets++;if(!set.warmup){var w=parseFloat(set.weight)||0;var r=parseInt(set.reps)||0;totalVolume+=w*r;}}
       });
     });
     var duration='';
@@ -1301,7 +1422,7 @@ function filterHistory(){
     html+='<div class="history-session-body">';
     s.exercises.forEach(function(ex){
       // Per-exercise volume
-      var exVol=0;ex.sets.forEach(function(set){if(set.completed){exVol+=(parseFloat(set.weight)||0)*(parseInt(set.reps)||0);}});
+      var exVol=0;ex.sets.forEach(function(set){if(set.completed&&!set.warmup){exVol+=(parseFloat(set.weight)||0)*(parseInt(set.reps)||0);}});
       // Check if any set was a PR
       var bestWeight=0;ex.sets.forEach(function(set){if(set.completed&&set.weight){var w=parseFloat(set.weight);if(w>bestWeight)bestWeight=w;}});
       var isPR=bestWeight>0&&prs[ex.name]&&bestWeight>=prs[ex.name].weight;
@@ -1325,7 +1446,7 @@ function filterHistory(){
         var numClass=set.completed?'completed':'';
         var rirVal=set.rir>=4?'4+':set.rir;
         var rirClass='hist-rir-'+Math.min(set.rir,4);
-        html+='<div class="hist-set-num '+numClass+'">'+(i+1)+'</div>';
+        html+='<div class="hist-set-num '+numClass+'"'+(set.warmup?' style="color:var(--orange)"':'')+'>'+(set.warmup?'W':(i+1))+'</div>';
         html+='<div class="hist-set-val '+incClass+'">'+(set.weight||'-')+' '+wtLabel()+'</div>';
         html+='<div class="hist-set-val '+incClass+'">'+(set.reps||'-')+' reps</div>';
         html+='<div class="hist-rir-chip '+rirClass+'">'+rirVal+'</div>';
