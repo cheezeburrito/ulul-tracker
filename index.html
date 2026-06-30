@@ -497,12 +497,13 @@ textarea { resize: vertical; min-height: 60px; }
   <div class="sf-right" id="sfProgress">Tap to return</div>
 </div>
 <div id="screenFlash"></div>
+<canvas id="confettiCanvas" style="position:fixed;inset:0;pointer-events:none;z-index:3500;display:block"></canvas>
 <div id="inputBar">
-  <button class="ib-step" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="stepFocused(-1)">−</button>
-  <button class="ib-step" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="stepFocused(1)">+</button>
+  <button class="ib-step" data-act="minus">−</button>
+  <button class="ib-step" data-act="plus">+</button>
   <div class="ib-spacer"></div>
-  <button class="ib-next" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="focusNextInput()">Next ▸</button>
-  <button class="ib-done" onmousedown="event.preventDefault()" ontouchstart="event.preventDefault()" onclick="dismissKeyboard()">Done</button>
+  <button class="ib-next" data-act="next">Next ▸</button>
+  <button class="ib-done" data-act="done">Done</button>
 </div>
 <script>
 const NS='ulul_';
@@ -839,6 +840,37 @@ document.addEventListener('touchstart',function(){try{_getAudioCtx();}catch(e){}
 /* SCREEN FLASH: visual alert (iOS has no web vibration) */
 function flashScreen(){var f=document.getElementById('screenFlash');if(!f)return;f.classList.remove('flashing');void f.offsetWidth;f.classList.add('flashing');setTimeout(function(){f.classList.remove('flashing');},2000);}
 
+/* CONFETTI: lightweight canvas particle burst (no library) */
+var _cvCanvas=null,_cvCtx=null,_cvParts=[],_cvRAF=null;
+function _cvResize(){if(!_cvCanvas)return;var dpr=window.devicePixelRatio||1;_cvCanvas.width=window.innerWidth*dpr;_cvCanvas.height=window.innerHeight*dpr;_cvCtx.setTransform(dpr,0,0,dpr,0,0);}
+function _cvEnsure(){if(_cvCanvas)return;_cvCanvas=document.getElementById('confettiCanvas');if(!_cvCanvas)return;_cvCtx=_cvCanvas.getContext('2d');_cvResize();window.addEventListener('resize',_cvResize);}
+function confettiBurst(opts){
+  opts=opts||{};_cvEnsure();if(!_cvCtx)return;
+  var W=window.innerWidth,H=window.innerHeight;
+  var ox=(opts.x!=null?opts.x:W/2),oy=(opts.y!=null?opts.y:H*0.55);
+  var count=opts.count||90,power=opts.power||12;
+  var colors=opts.colors||['#0a84ff','#30d158','#ff453a','#ff9f0a','#ffd60a','#5e5ce6','#ff375f','#64d2ff'];
+  for(var i=0;i<count;i++){
+    var ang=Math.random()*Math.PI*2,sp=power*(0.4+Math.random()*0.9);
+    _cvParts.push({x:ox,y:oy,vx:Math.cos(ang)*sp,vy:Math.sin(ang)*sp-power*0.5,g:0.3+Math.random()*0.18,
+      w:5+Math.random()*7,h:7+Math.random()*9,rot:Math.random()*6.28,vr:(Math.random()-0.5)*0.35,
+      color:colors[(Math.random()*colors.length)|0],life:0,maxLife:80+Math.random()*50,drag:0.986});
+  }
+  if(!_cvRAF)_cvLoop();
+}
+function _cvLoop(){
+  _cvRAF=requestAnimationFrame(_cvLoop);
+  var ctx=_cvCtx,W=window.innerWidth,H=window.innerHeight;ctx.clearRect(0,0,W,H);
+  for(var i=_cvParts.length-1;i>=0;i--){
+    var p=_cvParts[i];
+    p.vx*=p.drag;p.vy=p.vy*p.drag+p.g;p.x+=p.vx;p.y+=p.vy;p.rot+=p.vr;p.life++;
+    if(p.y>H+24||p.life>p.maxLife){_cvParts.splice(i,1);continue;}
+    ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.globalAlpha=Math.max(0,1-p.life/p.maxLife);
+    ctx.fillStyle=p.color;ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);ctx.restore();
+  }
+  if(_cvParts.length===0){cancelAnimationFrame(_cvRAF);_cvRAF=null;ctx.clearRect(0,0,W,H);}
+}
+
 /* WAKE LOCK: keep iPhone screen awake during a workout */
 var _wakeLock=null;
 function requestWakeLock(){
@@ -871,6 +903,24 @@ function focusNextInput(){
   else dismissKeyboard();
 }
 function dismissKeyboard(){if(_focusedInput)_focusedInput.blur();_focusedInput=null;var bar=document.getElementById('inputBar');if(bar)bar.classList.remove('visible');}
+/* Wire the keyboard bar: act on touchend (preventDefault keeps the input focused so the keyboard stays open) */
+(function(){
+  var bar=document.getElementById('inputBar');if(!bar)return;
+  function doAct(act){if(act==='minus')stepFocused(-1);else if(act==='plus')stepFocused(1);else if(act==='next')focusNextInput();else if(act==='done')dismissKeyboard();}
+  var isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
+  Array.prototype.forEach.call(bar.querySelectorAll('button'),function(btn){
+    var act=btn.dataset.act;
+    if(isTouch){
+      btn.addEventListener('touchend',function(e){e.preventDefault();doAct(act);},{passive:false});
+    }else{
+      btn.addEventListener('mousedown',function(e){e.preventDefault();});
+      btn.addEventListener('click',function(e){e.preventDefault();doAct(act);});
+    }
+  });
+  // Keep the focused input from blurring when the bar is touched
+  bar.addEventListener('touchstart',function(e){e.preventDefault();},{passive:false});
+  bar.addEventListener('mousedown',function(e){e.preventDefault();});
+})();
 
 /* SWIPE-TO-COMPLETE: swipe a set row right to mark done */
 var _swipe=null;
@@ -1241,16 +1291,18 @@ function toggleComplete(ei,si){
     if((s.reps===''||s.reps==null)&&prevSet&&prevSet.reps)s.reps=prevSet.reps;
     s._autofilled=false;
     if(navigator.vibrate)navigator.vibrate(30);
-    // Celebrate genuine PR (beating an existing record), not every first-ever set
-    if(s.weight&&!s.warmup&&!s._celebrated){var _prs=getAllPRs();if(_prs[ex.name]&&parseFloat(s.weight)>_prs[ex.name].weight){s._celebrated=true;setTimeout(function(){showPRCelebration(ex.name);},150);}}
+    // Confetti pop on every completed set (fires as the rest timer starts)
+    var _isPR=false;
+    if(s.weight&&!s.warmup&&!s._celebrated){var _prs=getAllPRs();if(_prs[ex.name]&&parseFloat(s.weight)>_prs[ex.name].weight){s._celebrated=true;_isPR=true;}}
+    if(_isPR){setTimeout(function(){showPRCelebration(ex.name);},120);}
+    else{confettiBurst({count:45,power:11,y:window.innerHeight*0.62});}
     startRestTimer();
   }
   persistSession();renderActiveSession();
 }
 function showPRCelebration(name){
   showToast('🏆 New PR — '+name+'!');
-  var f=document.getElementById('screenFlash');
-  if(f){f.style.background='#ffd60a';f.classList.remove('flashing');void f.offsetWidth;f.classList.add('flashing');setTimeout(function(){f.classList.remove('flashing');f.style.background='';},1500);}
+  confettiBurst({count:140,power:15,colors:['#ffd60a','#ff9f0a','#ffffff','#30d158','#0a84ff']});
   if(navigator.vibrate)navigator.vibrate([60,40,60,40,120]);
 }
 function addSet(ei){if(!activeSession)return;activeSession.exercises[ei].sets.push({weight:'',reps:'',rir:1,failure:false,completed:false,_autofilled:false});persistSession();renderActiveSession();}
@@ -1411,6 +1463,10 @@ function saveSession(){
   if(_newPRsArr.length>0){_sumHtml+='<div style="background:rgba(255,214,10,0.1);border:0.5px solid rgba(255,214,10,0.3);border-radius:var(--radius-md);padding:12px;margin-bottom:16px"><div style="font-size:13px;font-weight:700;color:var(--yellow);margin-bottom:6px">★ New Personal Records</div>';_newPRsArr.forEach(function(n){_sumHtml+='<div style="font-size:13px;color:var(--text-secondary);padding:2px 0">'+escapeHtml(n)+'</div>';});_sumHtml+='</div>';}
   _sumHtml+='<button class="btn btn-green btn-block" onclick="closeModal()">Done</button>';
   openModal(_sumHtml);
+  // Celebrate the finished workout with a big confetti explosion (two staggered bursts)
+  confettiBurst({count:160,power:16,y:window.innerHeight*0.4});
+  setTimeout(function(){confettiBurst({count:120,power:13,x:window.innerWidth*0.3,y:window.innerHeight*0.45});},220);
+  setTimeout(function(){confettiBurst({count:120,power:13,x:window.innerWidth*0.7,y:window.innerHeight*0.45});},420);
 }
 function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();cancelIdleTimer();releaseWakeLock();dismissKeyboard();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
 
