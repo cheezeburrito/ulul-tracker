@@ -340,6 +340,10 @@ textarea { resize: vertical; min-height: 60px; }
 .set-num.warmup { color:var(--orange); }
 .ex-hint { padding:0 16px 8px;font-size:12px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:4px; }
 .ex-chevron { color:var(--text-tertiary);font-size:11px;margin-right:2px;display:inline-block;width:10px; }
+.ex-prescribe { padding:0 16px 6px;display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--text-secondary);font-weight:600; }
+.ex-sub-link { color:var(--accent);cursor:pointer; }
+.ex-sub-link:active { opacity:0.6; }
+.ex-coach-notes { margin:0 16px 10px;padding:8px 10px;background:var(--bg-input);border-left:2px solid var(--accent);border-radius:6px;font-size:12px;color:var(--text-secondary);line-height:1.45; }
 .exercise-card.collapsed .ex-header { padding-bottom:8px; }
 .exercise-card.collapsed { opacity:0.85; }
 .ex-header-left { cursor:pointer; }
@@ -544,10 +548,47 @@ exercises:[{name:'Incline Bench Press',sets:2,reps:'6-10'},{name:'Hammer Strengt
 {id:'pull',name:'Pull',subtitle:'Back / Biceps / Rear Delts / Forearms',isDefault:true,
 exercises:[{name:'Low Row Machine',sets:2,reps:'8-12'},{name:'Adjustable Seated Row (wide grip)',sets:2,reps:'10-12'},{name:'Reverse Pec Deck',sets:2,reps:'12-15'},{name:'Standing Preacher Curl Machine',sets:2,reps:'10-12'},{name:'Incline DB Curl / Cable Curl',sets:2,reps:'10-15'},{name:'Forearm Machine',sets:2,reps:'12-15'}]},
 {id:'legs',name:'Legs',subtitle:'Hamstring / Glute / Stabilizer Emphasis',isDefault:true,
-exercises:[{name:'Single Leg Leg Curl',sets:2,reps:'10-12 each'},{name:'Hip Thrust',sets:2,reps:'8-12'},{name:'Single Leg Press',sets:2,reps:'10-12 each'},{name:'Adductor Machine',sets:2,reps:'15-20'},{name:'Seated Calf Raise',sets:2,reps:'15-20'},{name:'Plank',sets:2,reps:'60s'}]}
+exercises:[{name:'Single Leg Leg Curl',sets:2,reps:'10-12 each'},{name:'Hip Thrust',sets:2,reps:'8-12'},{name:'Single Leg Press',sets:2,reps:'10-12 each'},{name:'Adductor Machine',sets:2,reps:'15-20'},{name:'Seated Calf Raise',sets:2,reps:'15-20'},{name:'Plank',sets:2,reps:'60s'}]},
+/* THE MIN-MAX PROGRAM — 4-day split. Same exercises every week; only RIR changes
+   (Week 1 = intro, Week 7 = deload). Notes/rest/warm-ups from the program PDF. */
+{id:'minmax_full',name:'Min-Max Full Body',subtitle:'Min-Max Program · Day 1',isDefault:true,program:'minmax',
+exercises:[
+{name:'Lying Leg Curl',sets:2,reps:'6-8',warmup:'1-2',rest:'1-2 min',subs:['Seated Leg Curl','Nordic Ham Curl'],notes:'Set the machine so that you get the biggest stretch possible at the bottom. Prevent your butt from popping up as you curl.'},
+{name:'Squat (Your Choice)',sets:2,reps:'6-8',warmup:'2-4',rest:'3-5 min',subs:['See Notes'],notes:'This can be a Barbell Back Squat, Barbell Front Squat, Pendulum Squat, Hack Squat, Belt Squat, or Smith Machine Squat.'},
+{name:'Barbell Incline Press',sets:2,reps:'6-8',warmup:'2-4',rest:'3-5 min',subs:['Smith Machine Incline Press','DB Incline Press'],notes:'A 30° or 45° bench will work here. Pause for 1 second at the bottom of each rep while maintaining tension on the pecs.'},
+{name:'Incline DB Y-Raise',sets:1,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['Cable Y-Raise','Machine Lateral Raise'],notes:'Use a 30° incline bench (back against the bench) and lift the weight up and out in a Y shape.'},
+{name:'Pull-Up (Wide Grip)',sets:2,reps:'6-8',warmup:'1-2',rest:'2-3 min',subs:['Lat Pulldown (Wide Grip)','1-Arm Cable Pulldown'],notes:'Control the negative and feel your lats pulling apart. Full ROM!'},
+{name:'Standing Calf Raise',sets:1,reps:'6-8',warmup:'0-1',rest:'1-2 min',subs:['Leg Press Calf Press','Donkey Calf Raise'],notes:'1-2 second pause at the bottom of each rep. Instead of just going up onto your toes, think about rolling your ankle back and forth on the balls of your feet.'}]},
+{id:'minmax_upper',name:'Min-Max Upper',subtitle:'Min-Max Program · Day 2',isDefault:true,program:'minmax',
+exercises:[
+{name:'Close-Grip Lat Pulldown',sets:2,reps:'8-10',warmup:'2-3',rest:'2-3 min',subs:['Close-Grip Pull-Up','1-Arm Cable Pulldown'],notes:'Lean back by ~15° and drive your elbows down as you squeeze your shoulder blades together. This should feel like a mix of lats and mid-traps.'},
+{name:'Chest-Supported T-Bar Row',sets:2,reps:'8-10',warmup:'2-3',rest:'2-3 min',subs:['Chest-Supported Machine Row','Chest-Supported DB Row'],notes:'Flare elbows out at roughly 45° and squeeze your shoulder blades together hard at the top of each rep.'},
+{name:'Machine Shrug',sets:1,reps:'6-8',warmup:'1-2',rest:'1-2 min',subs:['Barbell Shrug','Cable Shrug-In'],notes:'Think about shrugging "up to your ears". Use straps, if possible.'},
+{name:'Machine Chest Press',sets:2,reps:'8-10',warmup:'2-4',rest:'3-5 min',subs:['Smith Machine Bench Press','DB Bench Press'],notes:'1 second pause at the bottom of each rep while maintaining tension on the pecs.'},
+{name:'High-Cable Lateral Raise',sets:2,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['DB Lateral Raise','Machine Lateral Raise'],notes:'Set the cable at roughly hip height. Let your hand go slightly past your midline at the bottom of each rep to get a deep stretch on the side delt.'},
+{name:'1-Arm Reverse Pec Deck',sets:1,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['Lying Reverse DB Flye','Reverse Cable Crossover'],notes:'Sweep the weight out to create the largest semi-circle possible with your arm.'},
+{name:'Cable Crunch',sets:2,reps:'6-8',warmup:'0-1',rest:'1-2 min',subs:['Weighted Crunch','Machine Crunch'],notes:'Round your lower back as you crunch. Maintain a mind-muscle connection with your 6-pack.'}]},
+{id:'minmax_lower',name:'Min-Max Lower',subtitle:'Min-Max Program · Day 3',isDefault:true,program:'minmax',
+exercises:[
+{name:'Leg Extension',sets:2,reps:'8-10',warmup:'1-2',rest:'1-2 min',subs:['Reverse Nordic','Sissy Squat'],notes:'Set the seat back as far as it will go while still feeling comfortable. Grab the handles as hard as you can to pull your butt down into the seat (using straps can help here).'},
+{name:'Barbell RDL',sets:2,reps:'6-8',warmup:'2-3',rest:'2-3 min',subs:['DB RDL','Seated Cable Deadlift'],notes:'Stick your glutes straight back as you lower the bar straight down, centered over the middle of your foot. Get a nice deep stretch at the bottom, but keep your spine neutral (don\'t round forward).'},
+{name:'Machine Hip Thrust',sets:2,reps:'6-8',warmup:'2-4',rest:'2-3 min',subs:['Barbell Hip Thrust','45° Hyperextension'],notes:'Squeeze your glutes hard at the top and control the weight on the way down.'},
+{name:'Leg Press',sets:1,reps:'6-8',warmup:'2-4',rest:'2-3 min',subs:['Smith Machine Squat','Barbell Squat'],notes:'Feet lower on the platform for more quad focus. Get as deep as you can without excessive back rounding.'},
+{name:'Standing Calf Raise',sets:2,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['Leg Press Calf Press','Donkey Calf Raise'],notes:'1-2 second pause at the bottom of each rep. Instead of just going up onto your toes, think about rolling your ankle back and forth on the balls of your feet.'}]},
+{id:'minmax_arms',name:'Min-Max Arms/Delts',subtitle:'Min-Max Program · Day 4',isDefault:true,program:'minmax',
+exercises:[
+{name:'Bayesian Cable Curl',sets:2,reps:'6-8',warmup:'0-1',rest:'1-2 min',subs:['Incline DB Curl','Standing DB Curl'],notes:'As you curl, optionally lean forward to prevent the cable from hitting your wrist at the top. Control the negative and feel a deep stretch at the bottom of each rep.'},
+{name:'Overhead Cable Triceps Extension',sets:2,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['Overhead DB Triceps Extension','Skull Crusher'],notes:'Feel a deep stretch on the triceps throughout the entire negative.'},
+{name:'Modified Zottman Curl',sets:1,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['DB Hammer Curl','Preacher Hammer Curl'],notes:'Hammer curl on the way up and supinated curl (palms up) on the way down.'},
+{name:'Cable Triceps Kickback',sets:2,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['Seated Dip Machine','Close Grip Dip'],notes:'Keep your upper arm behind your torso throughout the ROM.'},
+{name:'DB Wrist Curl',sets:2,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['Cable Wrist Curl'],notes:'Smooth, controlled reps.'},
+{name:'DB Wrist Extension',sets:2,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['Cable Wrist Extension'],notes:'Smooth, controlled reps.'},
+{name:'Alternating DB Curl',sets:1,reps:'6-8',warmup:'0-1',rest:'1-2 min',subs:['Barbell Curl','EZ-Bar Curl'],notes:'Slow, controlled reps!'},
+{name:'Machine Lateral Raise',sets:2,reps:'8-10',warmup:'0-1',rest:'1-2 min',subs:['High-Cable Lateral Raise','DB Lateral Raise'],notes:'Focus on squeezing your side delt to move the weight.'},
+{name:'Dead Hang (optional)',sets:2,reps:'max time',warmup:'0-1',rest:'1-2 min',notes:'Try to add a few more seconds each week!'}]}
 ];
 
-const COMMON_EXERCISES=['Flat Bench Press','Incline Bench Press','Dumbbell Bench Press','Incline DB Press','Hammer Strength Chest Press','Cable Fly Low to High','Pec Deck','Lat Pulldown','Seated Cable Row','Low Row Machine','Pendlay Row','Barbell Row','Adjustable Seated Row (wide grip)','T-Bar Row','Pull-Up','Chin-Up','Cable Lateral Raise','Lean-away Cable Lateral Raise','DB Lateral Raise','Reverse Pec Deck','Face Pull','Rear Delt Fly','Rope Pushdown','Overhead Cable Tricep Extension','Overhead DB Extension','Skull Crushers','Close Grip Bench Press','Dips','Standing Preacher Curl Machine','Incline DB Curl','Cable Curl','Barbell Curl','Hammer Curl','EZ Bar Curl','Concentration Curl','Pendulum Squat','Barbell Squat','Hack Squat','Goblet Squat','Leg Press','Single Leg Press','Leg Extension','Leg Curl','Single Leg Curl','RDL','Hip Thrust','Back Extension Machine (loaded)','Adductor Machine','Abductor Machine','Standing Calf Raise','Seated Calf Raise','Cable Crunch','Plank','Hanging Leg Raise','Ab Wheel','Horizontal Bench Press','Shoulder Press','Single Leg Leg Curl','Forearm Machine','Incline DB Curl / Cable Curl'];
+const COMMON_EXERCISES=['Flat Bench Press','Incline Bench Press','Dumbbell Bench Press','Incline DB Press','Hammer Strength Chest Press','Cable Fly Low to High','Pec Deck','Lat Pulldown','Seated Cable Row','Low Row Machine','Pendlay Row','Barbell Row','Adjustable Seated Row (wide grip)','T-Bar Row','Pull-Up','Chin-Up','Cable Lateral Raise','Lean-away Cable Lateral Raise','DB Lateral Raise','Reverse Pec Deck','Face Pull','Rear Delt Fly','Rope Pushdown','Overhead Cable Tricep Extension','Overhead DB Extension','Skull Crushers','Close Grip Bench Press','Dips','Standing Preacher Curl Machine','Incline DB Curl','Cable Curl','Barbell Curl','Hammer Curl','EZ Bar Curl','Concentration Curl','Pendulum Squat','Barbell Squat','Hack Squat','Goblet Squat','Leg Press','Single Leg Press','Leg Extension','Leg Curl','Single Leg Curl','RDL','Hip Thrust','Back Extension Machine (loaded)','Adductor Machine','Abductor Machine','Standing Calf Raise','Seated Calf Raise','Cable Crunch','Plank','Hanging Leg Raise','Ab Wheel','Horizontal Bench Press','Shoulder Press','Single Leg Leg Curl','Forearm Machine','Incline DB Curl / Cable Curl','Lying Leg Curl','Squat (Your Choice)','Barbell Incline Press','Incline DB Y-Raise','Pull-Up (Wide Grip)','Lat Pulldown (Wide Grip)','1-Arm Cable Pulldown','Close-Grip Lat Pulldown','Close-Grip Pull-Up','Chest-Supported T-Bar Row','Chest-Supported Machine Row','Chest-Supported DB Row','Machine Shrug','Barbell Shrug','Cable Shrug-In','Machine Chest Press','Smith Machine Bench Press','DB Bench Press','High-Cable Lateral Raise','1-Arm Reverse Pec Deck','Lying Reverse DB Flye','Reverse Cable Crossover','Weighted Crunch','Machine Crunch','Barbell RDL','DB RDL','Seated Cable Deadlift','Machine Hip Thrust','Barbell Hip Thrust','45° Hyperextension','Smith Machine Squat','Reverse Nordic','Sissy Squat','Nordic Ham Curl','Seated Leg Curl','Leg Press Calf Press','Donkey Calf Raise','Cable Y-Raise','Machine Lateral Raise','Smith Machine Incline Press','Bayesian Cable Curl','Overhead Cable Triceps Extension','Overhead DB Triceps Extension','Modified Zottman Curl','Preacher Hammer Curl','Cable Triceps Kickback','Seated Dip Machine','Close Grip Dip','DB Wrist Curl','Cable Wrist Curl','DB Wrist Extension','Cable Wrist Extension','Alternating DB Curl','Dead Hang (optional)','Standing DB Curl'];
 
 /* STORAGE */
 function loadJSON(k,fb){try{return JSON.parse(localStorage.getItem(k))||fb;}catch{return fb;}}
@@ -565,7 +606,8 @@ function getRestSound(){return localStorage.getItem(NS+'rest_sound')!=='false';}
 function setRestSound(v){localStorage.setItem(NS+'rest_sound',v?'true':'false');}
 
 /* MUSCLE GROUPS: map exercises -> muscle for weekly volume breakdown */
-var MUSCLE_MAP={'Flat Bench Press':'Chest','Incline Bench Press':'Chest','Dumbbell Bench Press':'Chest','Incline DB Press':'Chest','Hammer Strength Chest Press':'Chest','Cable Fly Low to High':'Chest','Pec Deck':'Chest','Lat Pulldown':'Back','Seated Cable Row':'Back','Low Row Machine':'Back','Pendlay Row':'Back','Barbell Row':'Back','Adjustable Seated Row (wide grip)':'Back','T-Bar Row':'Back','Pull-Up':'Back','Chin-Up':'Back','Cable Lateral Raise':'Shoulders','Lean-away Cable Lateral Raise':'Shoulders','DB Lateral Raise':'Shoulders','Reverse Pec Deck':'Shoulders','Face Pull':'Shoulders','Rear Delt Fly':'Shoulders','Rope Pushdown':'Triceps','Overhead Cable Tricep Extension':'Triceps','Overhead DB Extension':'Triceps','Skull Crushers':'Triceps','Close Grip Bench Press':'Triceps','Dips':'Triceps','Standing Preacher Curl Machine':'Biceps','Incline DB Curl':'Biceps','Cable Curl':'Biceps','Barbell Curl':'Biceps','Hammer Curl':'Biceps','EZ Bar Curl':'Biceps','Concentration Curl':'Biceps','Incline DB Curl / Cable Curl':'Biceps','Pendulum Squat':'Quads','Barbell Squat':'Quads','Hack Squat':'Quads','Goblet Squat':'Quads','Leg Press':'Quads','Single Leg Press':'Quads','Leg Extension':'Quads','Leg Curl':'Hamstrings','Single Leg Curl':'Hamstrings','RDL':'Hamstrings','Hip Thrust':'Glutes','Back Extension Machine (loaded)':'Glutes','Adductor Machine':'Glutes','Abductor Machine':'Glutes','Standing Calf Raise':'Calves','Seated Calf Raise':'Calves','Cable Crunch':'Core','Plank':'Core','Hanging Leg Raise':'Core','Ab Wheel':'Core','Horizontal Bench Press':'Chest','Shoulder Press':'Shoulders','Single Leg Leg Curl':'Hamstrings','Forearm Machine':'Biceps'};
+var MUSCLE_MAP={'Flat Bench Press':'Chest','Incline Bench Press':'Chest','Dumbbell Bench Press':'Chest','Incline DB Press':'Chest','Hammer Strength Chest Press':'Chest','Cable Fly Low to High':'Chest','Pec Deck':'Chest','Lat Pulldown':'Back','Seated Cable Row':'Back','Low Row Machine':'Back','Pendlay Row':'Back','Barbell Row':'Back','Adjustable Seated Row (wide grip)':'Back','T-Bar Row':'Back','Pull-Up':'Back','Chin-Up':'Back','Cable Lateral Raise':'Shoulders','Lean-away Cable Lateral Raise':'Shoulders','DB Lateral Raise':'Shoulders','Reverse Pec Deck':'Shoulders','Face Pull':'Shoulders','Rear Delt Fly':'Shoulders','Rope Pushdown':'Triceps','Overhead Cable Tricep Extension':'Triceps','Overhead DB Extension':'Triceps','Skull Crushers':'Triceps','Close Grip Bench Press':'Triceps','Dips':'Triceps','Standing Preacher Curl Machine':'Biceps','Incline DB Curl':'Biceps','Cable Curl':'Biceps','Barbell Curl':'Biceps','Hammer Curl':'Biceps','EZ Bar Curl':'Biceps','Concentration Curl':'Biceps','Incline DB Curl / Cable Curl':'Biceps','Pendulum Squat':'Quads','Barbell Squat':'Quads','Hack Squat':'Quads','Goblet Squat':'Quads','Leg Press':'Quads','Single Leg Press':'Quads','Leg Extension':'Quads','Leg Curl':'Hamstrings','Single Leg Curl':'Hamstrings','RDL':'Hamstrings','Hip Thrust':'Glutes','Back Extension Machine (loaded)':'Glutes','Adductor Machine':'Glutes','Abductor Machine':'Glutes','Standing Calf Raise':'Calves','Seated Calf Raise':'Calves','Cable Crunch':'Core','Plank':'Core','Hanging Leg Raise':'Core','Ab Wheel':'Core','Horizontal Bench Press':'Chest','Shoulder Press':'Shoulders','Single Leg Leg Curl':'Hamstrings','Forearm Machine':'Biceps',
+'Lying Leg Curl':'Hamstrings','Seated Leg Curl':'Hamstrings','Nordic Ham Curl':'Hamstrings','Reverse Nordic':'Quads','Sissy Squat':'Quads','Squat (Your Choice)':'Quads','Smith Machine Squat':'Quads','Barbell Incline Press':'Chest','Smith Machine Incline Press':'Chest','Machine Chest Press':'Chest','Smith Machine Bench Press':'Chest','DB Bench Press':'Chest','Incline DB Y-Raise':'Shoulders','Cable Y-Raise':'Shoulders','High-Cable Lateral Raise':'Shoulders','Machine Lateral Raise':'Shoulders','1-Arm Reverse Pec Deck':'Shoulders','Lying Reverse DB Flye':'Shoulders','Reverse Cable Crossover':'Shoulders','Pull-Up (Wide Grip)':'Back','Lat Pulldown (Wide Grip)':'Back','1-Arm Cable Pulldown':'Back','Close-Grip Lat Pulldown':'Back','Close-Grip Pull-Up':'Back','Chest-Supported T-Bar Row':'Back','Chest-Supported Machine Row':'Back','Chest-Supported DB Row':'Back','Machine Shrug':'Back','Barbell Shrug':'Back','Cable Shrug-In':'Back','Dead Hang (optional)':'Back','Barbell RDL':'Hamstrings','DB RDL':'Hamstrings','Seated Cable Deadlift':'Hamstrings','Machine Hip Thrust':'Glutes','Barbell Hip Thrust':'Glutes','45° Hyperextension':'Glutes','Leg Press Calf Press':'Calves','Donkey Calf Raise':'Calves','Weighted Crunch':'Core','Machine Crunch':'Core','Bayesian Cable Curl':'Biceps','Standing DB Curl':'Biceps','Modified Zottman Curl':'Biceps','Preacher Hammer Curl':'Biceps','Alternating DB Curl':'Biceps','DB Wrist Curl':'Biceps','Cable Wrist Curl':'Biceps','DB Wrist Extension':'Biceps','Cable Wrist Extension':'Biceps','Overhead Cable Triceps Extension':'Triceps','Overhead DB Triceps Extension':'Triceps','Cable Triceps Kickback':'Triceps','Seated Dip Machine':'Triceps','Close Grip Dip':'Triceps'};
 function getMuscleGroup(name){
   if(MUSCLE_MAP[name])return MUSCLE_MAP[name];
   var n=(name||'').toLowerCase();
@@ -1032,8 +1074,17 @@ document.addEventListener('touchend',function(){
 
 /* REST TIMER: timestamp-based so it survives app backgrounding */
 var restTimerEndTime=0;
-function startRestTimer(){
-  restTimerEndTime=Date.now()+getRestDuration()*1000;
+/* Turn a program rest string ("1-2 min", "3-5 min") into seconds (midpoint) */
+function parseRestToSec(rest){
+  if(!rest)return null;
+  var m=String(rest).match(/(\d+)\s*(?:-\s*(\d+))?\s*min/i);
+  if(!m)return null;
+  var lo=parseInt(m[1]),hi=m[2]?parseInt(m[2]):lo;
+  return Math.round(((lo+hi)/2)*60);
+}
+function startRestTimer(secs){
+  var dur=(typeof secs==='number'&&secs>0)?secs:getRestDuration();
+  restTimerEndTime=Date.now()+dur*1000;
   updateRestTimerDisplay();$('#restTimerOverlay').classList.add('visible');
   clearInterval(restTimerInterval);
   restTimerInterval=setInterval(function(){
@@ -1292,6 +1343,7 @@ function beginSession(wid,version){
       var flagKey=w.id+'::'+ex.name;var flag=flags[flagKey]||null;
       var prev=getPreviousExerciseData(ex.name,w.id);
       return{id:generateId(),name:ex.name,targetReps:ex.reps,targetSets:ex.sets||2,
+        coachNotes:ex.notes||'',rest:ex.rest||'',warmupSets:ex.warmup||'',subs:ex.subs||null,
         notes:'',flagUp:flag==='up',flagDown:flag==='down',prevFlag:flag,
         sets:Array.from({length:ex.sets||2},function(_,i){
           var ps=prev&&prev.sets&&prev.sets[i]?prev.sets[i]:null;
@@ -1344,6 +1396,10 @@ function renderActiveSession(){
     if(prev){var ps=prev.sets.map(function(s){return(s.weight||'?')+'×'+(s.reps||'?');}).join(', ');html+='<div class="ex-prev">Last: <span>'+ps+'</span>'+(bestRm>0?'<span style="margin-left:auto;color:var(--text-secondary);font-weight:600">e1RM '+bestRm+'</span>':'')+'</div>';}
     else if(bestRm>0){html+='<div class="ex-prev">Best e1RM today: <span>'+bestRm+' '+wtLabel()+'</span></div>';}
     var _hint=getOverloadHint(ex.name,activeSession.workoutId);if(_hint)html+='<div class="ex-hint">🎯 '+_hint+'</div>';
+    if(ex.rest||ex.warmupSets){
+      html+='<div class="ex-prescribe">'+(ex.warmupSets?'<span>🔥 Warm-up '+escapeHtml(ex.warmupSets)+'</span>':'')+(ex.rest?'<span>⏱ Rest '+escapeHtml(ex.rest)+'</span>':'')+(ex.subs&&ex.subs.length?'<span class="ex-sub-link" onclick="showSubsModal('+exIdx+')">⇄ Alternatives</span>':'')+'</div>';
+    }
+    if(ex.coachNotes)html+='<div class="ex-coach-notes">'+escapeHtml(ex.coachNotes)+'</div>';
     html+='<div class="set-table"><div class="set-row-header"><div>Set</div><div>Weight</div><div>Reps</div><div>RIR</div><div style="text-align:center">F</div><div style="text-align:center">✓</div></div>';
     var _wn=0;
     ex.sets.forEach(function(set,setIdx){
@@ -1423,7 +1479,7 @@ function toggleComplete(ei,si){
     if(s.weight&&!s.warmup&&!s._celebrated){var _prs=getAllPRs();if(_prs[ex.name]&&parseFloat(s.weight)>_prs[ex.name].weight){s._celebrated=true;_isPR=true;}}
     if(_isPR){setTimeout(function(){showPRCelebration(ex.name);},120);}
     else{confettiBurst({count:45,power:11,y:window.innerHeight*0.62});}
-    if(getRestAuto())startRestTimer();
+    if(getRestAuto())startRestTimer(parseRestToSec(ex.rest));
   }
   // Auto-collapse when every set is done; auto-expand if a set is un-completed
   ex._collapsed=ex.sets.every(function(x){return x.completed;});
@@ -1473,6 +1529,22 @@ function renderExSearch(){
   });
 }
 function showSwapModal(exIdx){openExerciseSearch('Swap Exercise',function(name){swapExercise(exIdx,name);});}
+/* Program-recommended substitutions for an exercise */
+function showSubsModal(exIdx){
+  if(!activeSession)return;var ex=activeSession.exercises[exIdx];if(!ex||!ex.subs)return;
+  var html='<div class="modal-title">Alternatives</div>';
+  html+='<p style="font-size:13px;color:var(--text-secondary);text-align:center;margin-bottom:14px">Recommended swaps for '+escapeHtml(ex.name)+'</p>';
+  html+='<div class="swap-list">';
+  ex.subs.forEach(function(s){
+    if(/^see notes$/i.test(s)){html+='<div class="swap-item" style="color:var(--text-tertiary)">'+escapeHtml(ex.coachNotes||'See notes')+'</div>';return;}
+    html+='<div class="swap-item" data-sub-name="'+escapeHtml(s)+'">'+escapeHtml(s)+'</div>';
+  });
+  html+='</div><button class="btn btn-secondary btn-block" style="margin-top:14px" onclick="showSwapModal('+exIdx+')">Search all exercises</button>';
+  openModal(html);
+  document.querySelectorAll('#modalContent .swap-item[data-sub-name]').forEach(function(el){
+    el.addEventListener('click',function(){swapExercise(exIdx,el.dataset.subName);});
+  });
+}
 function swapExercise(ei,name){if(!activeSession)return;activeSession.exercises[ei].name=name;closeModal();persistSession();renderActiveSession();showToast('Exercise swapped');}
 
 /* ADD EXERCISE mid-workout */
@@ -1782,9 +1854,25 @@ function deleteSelectedWorkouts(){
   },'Delete',true);
 }
 
+var MINMAX_NOTES=[
+ 'Nearly every set should be taken to failure, or 1 rep shy of failure. The exceptions are Week 1 (intro week) and Week 7 (deload), where you won\'t train quite as hard.',
+ 'RIR = Reps In Reserve. RIR 0 means you hit failure (zero reps in the tank). RIR 1 means you stop 1 rep shy of failure.',
+ 'For heavy compounds (Squat, Barbell Incline Press, Leg Press), RIR 0 means you couldn\'t complete another rep — for safety you don\'t need to actually attempt and fail the last rep.',
+ 'For all other exercises, RIR 0 means actually go for another rep even if you think you can\'t get it — go until you literally fail.',
+ 'Start each workout with ~5 minutes of light cardio to raise your core body temperature.',
+ 'Each exercise lists its recommended warm-up sets — these should be light and not fatiguing.'
+];
+function showProgramNotes(){
+  var html='<div class="modal-title">The Min-Max Program</div>';
+  html+='<p style="font-size:12px;color:var(--text-tertiary);text-align:center;margin-bottom:14px">Important program notes — please read before starting</p>';
+  MINMAX_NOTES.forEach(function(n){html+='<div class="ex-coach-notes" style="margin:0 0 10px">'+escapeHtml(n)+'</div>';});
+  html+='<button class="btn btn-secondary btn-block" style="margin-top:6px" onclick="closeModal()">Close</button>';
+  openModal(html);
+}
 function previewWorkout(id){
   var allW=getAllWorkouts();var w=allW.find(function(x){return x.id===id;});if(!w)return;
   var html='<div class="modal-title">'+w.name+'</div>';
+  if(w.program==='minmax')html+='<div style="text-align:center;margin-bottom:12px"><button class="btn btn-secondary btn-sm" onclick="showProgramNotes()">📋 Program Notes &amp; RIR Guide</button></div>';
   if(w.subtitle)html+='<p style="text-align:center;color:var(--text-secondary);font-size:14px;margin-bottom:16px">'+w.subtitle+'</p>';
   if(w.short){html+='<div class="section-header">Short Version</div>';w.short.forEach(function(ex){html+='<div style="padding:6px 0;font-size:14px">'+ex.name+' <span style="color:var(--text-secondary)">'+ex.sets+' × '+ex.reps+'</span></div>';});}
   if(w.optimal){html+='<div class="section-header" style="margin-top:16px">Optimal Version</div>';w.optimal.forEach(function(ex){html+='<div style="padding:6px 0;font-size:14px">'+ex.name+' <span style="color:var(--text-secondary)">'+ex.sets+' × '+ex.reps+'</span></div>';});}
