@@ -942,26 +942,62 @@ function openModal(html){$('#modalContent').innerHTML=html;$('#modalOverlay').cl
 function closeModal(){$('#modalOverlay').classList.remove('visible');}
 
 /* REST TIMER */
-/* ALARM: Web Audio beep that works on iOS after any user tap */
-var _audioCtx=null;
-function _getAudioCtx(){if(!_audioCtx)_audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(_audioCtx.state==='suspended')_audioCtx.resume();return _audioCtx;}
-function playAlarm(){
+/* ALARM: Web Audio beep. iOS suspends the AudioContext aggressively (screen lock,
+   backgrounding, audio interruptions), so we re-unlock on every interaction and
+   hold a silent keep-alive tone while a rest timer is running. */
+var _audioCtx=null,_keepAlive=null;
+function _getAudioCtx(){
+  if(!_audioCtx){
+    try{_audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){return null;}
+  }
+  return _audioCtx;
+}
+/* Resume the context and tell us when it's actually running (resume() is async) */
+function unlockAudio(){
+  var ctx=_getAudioCtx();
+  if(!ctx)return Promise.resolve(null);
+  if(ctx.state==='suspended'){
+    try{return ctx.resume().then(function(){return ctx;},function(){return ctx;});}
+    catch(e){return Promise.resolve(ctx);}
+  }
+  return Promise.resolve(ctx);
+}
+/* Inaudible tone that stops iOS from suspending the context mid-rest */
+function startAudioKeepAlive(){
+  var ctx=_getAudioCtx();if(!ctx||_keepAlive)return;
   try{
-    var ctx=_getAudioCtx();
-    // Three-beep pattern: 880Hz, 1046Hz, 1318Hz (ascending)
-    [[0,880],[0.25,1046],[0.5,1318]].forEach(function(p){
-      var o=ctx.createOscillator();var g=ctx.createGain();
-      o.connect(g);g.connect(ctx.destination);
-      o.frequency.value=p[1];o.type='sine';
-      g.gain.setValueAtTime(0,ctx.currentTime+p[0]);
-      g.gain.linearRampToValueAtTime(0.5,ctx.currentTime+p[0]+0.02);
-      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+p[0]+0.35);
-      o.start(ctx.currentTime+p[0]);o.stop(ctx.currentTime+p[0]+0.4);
-    });
+    var o=ctx.createOscillator(),g=ctx.createGain();
+    g.gain.value=0.0001;o.frequency.value=30;o.type='sine';
+    o.connect(g);g.connect(ctx.destination);o.start();
+    _keepAlive={osc:o,gain:g};
   }catch(e){}
 }
-// Unlock audio context on first tap anywhere
-document.addEventListener('touchstart',function(){try{_getAudioCtx();}catch(e){}},{once:true,passive:true});
+function stopAudioKeepAlive(){
+  if(!_keepAlive)return;
+  try{_keepAlive.osc.stop();_keepAlive.osc.disconnect();_keepAlive.gain.disconnect();}catch(e){}
+  _keepAlive=null;
+}
+function _scheduleBeeps(ctx){
+  var t0=ctx.currentTime+0.03; // always schedule just ahead of now
+  [[0,880],[0.25,1046],[0.5,1318]].forEach(function(p){
+    var o=ctx.createOscillator(),g=ctx.createGain();
+    o.connect(g);g.connect(ctx.destination);
+    o.frequency.value=p[1];o.type='sine';
+    var s=t0+p[0];
+    g.gain.setValueAtTime(0.0001,s);
+    g.gain.exponentialRampToValueAtTime(0.6,s+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,s+0.35);
+    o.start(s);o.stop(s+0.42);
+  });
+}
+function playAlarm(){
+  unlockAudio().then(function(ctx){if(ctx){try{_scheduleBeeps(ctx);}catch(e){}}});
+}
+/* Re-unlock on EVERY interaction — a one-shot listener is why it only worked once */
+['touchstart','touchend','click'].forEach(function(evt){
+  document.addEventListener(evt,function(){unlockAudio();},{passive:true});
+});
+document.addEventListener('visibilitychange',function(){if(!document.hidden)unlockAudio();});
 
 /* SCREEN FLASH: visual alert (iOS has no web vibration) */
 function flashScreen(){var f=document.getElementById('screenFlash');if(!f)return;f.classList.remove('flashing');void f.offsetWidth;f.classList.add('flashing');setTimeout(function(){f.classList.remove('flashing');},2000);}
@@ -1084,6 +1120,9 @@ function parseRestToSec(rest){
 }
 function startRestTimer(secs){
   var dur=(typeof secs==='number'&&secs>0)?secs:getRestDuration();
+  // We're inside the tap that completed the set — the one moment iOS reliably
+  // lets us wake audio. Unlock now and hold it open for the whole rest period.
+  unlockAudio().then(function(){startAudioKeepAlive();});
   restTimerEndTime=Date.now()+dur*1000;
   updateRestTimerDisplay();$('#restTimerOverlay').classList.add('visible');
   clearInterval(restTimerInterval);
@@ -1116,7 +1155,7 @@ function updateRestTimerDisplay(){
 }
 function adjustRestTimer(d){restTimerEndTime+=d*1000;updateRestTimerDisplay();}
 function setRestTimerTo(secs){restTimerEndTime=Date.now()+secs*1000;$('#restTimerDisplay').classList.remove('overtime');updateRestTimerDisplay();}
-function dismissRestTimer(){clearInterval(restTimerInterval);restTimerInterval=null;$('#restTimerOverlay').classList.remove('visible');$('#restTimerDisplay').classList.remove('overtime');}
+function dismissRestTimer(){clearInterval(restTimerInterval);restTimerInterval=null;stopAudioKeepAlive();$('#restTimerOverlay').classList.remove('visible');$('#restTimerDisplay').classList.remove('overtime');}
 $('#restTimerOverlay').addEventListener('click',function(e){if(e.target===this)dismissRestTimer();});
 
 /* Catch up timers when app returns to foreground + persist before kill */
@@ -1650,7 +1689,7 @@ function saveSession(){
   var _vol=0;var _sets=0;var _newPRs={};
   session.exercises.forEach(function(ex){ex.sets.forEach(function(s){if(s.completed){_sets++;if(s.warmup)return;var w=parseFloat(s.weight)||0,r=parseInt(s.reps)||0;_vol+=w*r;if(w>0&&(!_priorPRs[ex.name]||w>_priorPRs[ex.name].weight))_newPRs[ex.name]=1;}});});
   var _newPRsArr=Object.keys(_newPRs);
-  activeSession=null;clearPersistedSession();cancelIdleTimer();releaseWakeLock();dismissKeyboard();if(navigator.vibrate)navigator.vibrate([50,30,50]);
+  activeSession=null;clearPersistedSession();cancelIdleTimer();releaseWakeLock();dismissKeyboard();stopAudioKeepAlive();if(navigator.vibrate)navigator.vibrate([50,30,50]);
   sbPush();
   renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';
   // Show summary modal
@@ -1669,7 +1708,7 @@ function saveSession(){
   setTimeout(function(){confettiBurst({count:120,power:13,x:window.innerWidth*0.3,y:window.innerHeight*0.45});},220);
   setTimeout(function(){confettiBurst({count:120,power:13,x:window.innerWidth*0.7,y:window.innerHeight*0.45});},420);
 }
-function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();cancelIdleTimer();releaseWakeLock();dismissKeyboard();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
+function discardSession(){showConfirm('Discard Session?','All progress will be lost.',function(){stopSessionTimer();cancelIdleTimer();releaseWakeLock();dismissKeyboard();stopAudioKeepAlive();activeSession=null;clearPersistedSession();renderToday();$('#pageTitle').textContent='Today';$('#headerActions').innerHTML='';showToast('Session discarded');},'Discard',true);}
 
 /* HISTORY TAB */
 function renderHistory(){
